@@ -15,6 +15,9 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "ChoreChart",
   description: "Chore and pocket money tracking for families",
+  other: {
+    "content-language": "en",
+  },
 };
 
 export default function RootLayout({
