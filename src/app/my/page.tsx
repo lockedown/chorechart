@@ -1,13 +1,14 @@
 import { getSession } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { getChild, getRewards, markChoreDone, claimReward } from "@/lib/actions";
+import { getChild, getRewards, markChoreDone, claimReward, getChildProposals, childAcceptCounter, childDeclineCounter } from "@/lib/actions";
 import { Nav } from "@/components/nav";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { CheckCircle, Clock, Award, Gift, Plus, Minus } from "lucide-react";
+import { CheckCircle, Clock, Award, Gift, Plus, Minus, Lightbulb } from "lucide-react";
+import { ProposalForm } from "@/components/proposal-form";
 
 export default async function MyPage() {
   const session = await getSession();
@@ -15,14 +16,21 @@ export default async function MyPage() {
   if (session.user.role === "admin") redirect("/");
   if (!session.user.child_id) redirect("/login");
 
-  const [child, rewards] = await Promise.all([
+  const [child, rewards, proposals] = await Promise.all([
     getChild(session.user.child_id),
     getRewards(),
+    getChildProposals(session.user.child_id),
   ]);
 
   if (!child) redirect("/login");
 
-  const pendingChores = child.assignedChores.filter((a) => a.status === "pending");
+  const today = new Date().toISOString().split("T")[0];
+  const pendingChores = child.assignedChores.filter(
+    (a) => a.status === "pending" && (!a.due_date || a.due_date <= today)
+  );
+  const upcomingChores = child.assignedChores.filter(
+    (a) => a.status === "pending" && a.due_date && a.due_date > today
+  );
   const completedChores = child.assignedChores.filter((a) => a.status === "completed");
   const approvedChores = child.assignedChores.filter((a) => a.status === "approved");
 
@@ -46,6 +54,7 @@ export default async function MyPage() {
         <Tabs defaultValue="chores" className="space-y-6">
           <TabsList>
             <TabsTrigger value="chores">My Chores</TabsTrigger>
+            <TabsTrigger value="propose">Propose</TabsTrigger>
             <TabsTrigger value="rewards">Rewards</TabsTrigger>
             <TabsTrigger value="history">History</TabsTrigger>
           </TabsList>
@@ -82,6 +91,36 @@ export default async function MyPage() {
                 </div>
               )}
             </div>
+
+            {/* Upcoming (future recurring chores) */}
+            {upcomingChores.length > 0 && (
+              <div>
+                <h3 className="font-semibold mb-3 flex items-center gap-2">
+                  <Clock className="h-4 w-4 text-violet-400" /> Upcoming ({upcomingChores.length})
+                </h3>
+                <div className="space-y-2">
+                  {upcomingChores.slice(0, 7).map((a) => (
+                    <Card key={a.id} className="opacity-60">
+                      <CardContent className="flex items-center justify-between py-3">
+                        <div>
+                          <p className="font-medium">{a.chore_title}</p>
+                          <p className="text-sm text-muted-foreground">
+                            £{a.chore_value.toFixed(2)}
+                            {a.due_date && ` · ${new Date(a.due_date).toLocaleDateString()}`}
+                          </p>
+                        </div>
+                        <Badge variant="secondary" className="bg-violet-100 text-violet-700">Upcoming</Badge>
+                      </CardContent>
+                    </Card>
+                  ))}
+                  {upcomingChores.length > 7 && (
+                    <p className="text-xs text-muted-foreground text-center">
+                      + {upcomingChores.length - 7} more upcoming
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
 
             {/* Waiting for approval */}
             {completedChores.length > 0 && (
@@ -120,6 +159,67 @@ export default async function MyPage() {
                           <p className="text-sm text-muted-foreground">£{a.chore_value.toFixed(2)}</p>
                         </div>
                         <Badge variant="secondary" className="bg-green-100 text-green-700">Approved</Badge>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </div>
+            )}
+          </TabsContent>
+
+          {/* ─── Propose Tab ─── */}
+          <TabsContent value="propose" className="space-y-6">
+            <Card>
+              <CardHeader><CardTitle className="text-base flex items-center gap-2"><Lightbulb className="h-4 w-4 text-amber-500" /> Propose a Chore</CardTitle></CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground mb-4">Suggest a chore and how much you think it&apos;s worth. Your parent can accept, counter, or decline.</p>
+                <ProposalForm childId={child.id} />
+              </CardContent>
+            </Card>
+
+            {proposals.length > 0 && (
+              <div>
+                <h3 className="font-semibold mb-3">My Proposals</h3>
+                <div className="space-y-2">
+                  {proposals.map((p) => (
+                    <Card key={p.id}>
+                      <CardContent className="py-3">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <p className="font-medium">{p.title}</p>
+                            {p.description && <p className="text-sm text-muted-foreground">{p.description}</p>}
+                            <p className="text-sm mt-1">
+                              Your ask: <span className="font-semibold">£{p.requested_value.toFixed(2)}</span>
+                              {p.admin_value !== null && (
+                                <> · Counter offer: <span className="font-semibold text-amber-600">£{p.admin_value.toFixed(2)}</span></>
+                              )}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {p.status === "pending" && (
+                              <Badge variant="secondary" className="bg-amber-100 text-amber-700">Pending</Badge>
+                            )}
+                            {p.status === "countered" && (
+                              <div className="flex gap-2">
+                                <form action={async () => { "use server"; await childAcceptCounter(p.id); }}>
+                                  <Button size="sm" className="bg-green-600 hover:bg-green-700">Accept £{p.admin_value?.toFixed(2)}</Button>
+                                </form>
+                                <form action={async () => { "use server"; await childDeclineCounter(p.id); }}>
+                                  <Button size="sm" variant="outline" className="text-red-600 border-red-300">Decline</Button>
+                                </form>
+                              </div>
+                            )}
+                            {p.status === "accepted" && (
+                              <Badge variant="secondary" className="bg-green-100 text-green-700">Accepted</Badge>
+                            )}
+                            {p.status === "rejected" && (
+                              <Badge variant="secondary" className="bg-red-100 text-red-700">Rejected</Badge>
+                            )}
+                            {p.status === "declined" && (
+                              <Badge variant="secondary" className="bg-gray-100 text-gray-700">Declined</Badge>
+                            )}
+                          </div>
+                        </div>
                       </CardContent>
                     </Card>
                   ))}

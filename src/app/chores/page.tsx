@@ -1,13 +1,11 @@
-import { getChores, createChore, deleteChore } from "@/lib/actions";
+import { getChores, deleteChore } from "@/lib/actions";
 import { Nav } from "@/components/nav";
 import { requireAdmin } from "@/lib/auth";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Trash2 } from "lucide-react";
+import { CreateChoreForm } from "@/components/create-chore-form";
 
 export default async function ChoresPage() {
   await requireAdmin();
@@ -25,37 +23,7 @@ export default async function ChoresPage() {
         {/* Create chore form */}
         <Card>
           <CardContent className="py-6">
-            <form action={createChore} className="space-y-4">
-              <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-end gap-3 sm:gap-4">
-                <div className="flex-1 min-w-0 sm:min-w-[200px]">
-                  <Label htmlFor="title">Title</Label>
-                  <Input id="title" name="title" placeholder="e.g. Make the bed" required />
-                </div>
-                <div className="w-32">
-                  <Label htmlFor="value">Value (£)</Label>
-                  <Input id="value" name="value" type="number" step="0.01" min="0" placeholder="1.00" required />
-                </div>
-                <div className="w-40">
-                  <Label htmlFor="frequency">Frequency</Label>
-                  <select
-                    id="frequency"
-                    name="frequency"
-                    className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                  >
-                    <option value="one-off">One-off</option>
-                    <option value="daily">Daily</option>
-                    <option value="weekly">Weekly</option>
-                  </select>
-                </div>
-              </div>
-              <div>
-                <Label htmlFor="description">Description (optional)</Label>
-                <Textarea id="description" name="description" placeholder="Describe what needs to be done..." rows={2} />
-              </div>
-              <Button type="submit" className="bg-amber-500 hover:bg-amber-600">
-                Create Chore
-              </Button>
-            </form>
+            <CreateChoreForm />
           </CardContent>
         </Card>
 
@@ -74,7 +42,11 @@ export default async function ChoresPage() {
                   <div className="flex-1 min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="font-semibold">{chore.title}</p>
-                      <Badge variant="outline" className="capitalize text-xs">{chore.frequency}</Badge>
+                      <Badge variant="outline" className="capitalize text-xs">
+                        {chore.frequency === "weekly" && chore.day_of_week !== null
+                          ? `Weekly (${["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][chore.day_of_week]})`
+                          : chore.frequency}
+                      </Badge>
                       <Badge variant="secondary" className="bg-green-100 text-green-700 text-xs">£{chore.value.toFixed(2)}</Badge>
                     </div>
                     {chore.description && (

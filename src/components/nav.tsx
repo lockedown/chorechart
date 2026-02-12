@@ -15,11 +15,13 @@ import {
   Gift,
   Shield,
   ClipboardList,
+  ClipboardCheck,
 } from "lucide-react";
 import { logout } from "@/lib/auth";
 
 const adminLinks = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/approvals", label: "Approvals", icon: ClipboardCheck },
   { href: "/children", label: "Children", icon: Users },
   { href: "/chores", label: "Chores", icon: ListChecks },
   { href: "/rewards", label: "Rewards", icon: Gift },

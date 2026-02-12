@@ -13,6 +13,7 @@ export interface Chore {
   description: string;
   value: number;
   frequency: string;
+  day_of_week: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -23,6 +24,8 @@ export interface ChoreAssignment {
   chore_id: string;
   status: string;
   due_date: string | null;
+  end_date: string | null;
+  recurrence_source_id: string | null;
   completed_at: string | null;
   approved_at: string | null;
   created_at: string;
@@ -92,4 +95,20 @@ export interface Session {
   user_id: string;
   expires_at: string;
   created_at: string;
+}
+
+export interface ChoreProposal {
+  id: string;
+  child_id: string;
+  title: string;
+  description: string;
+  requested_value: number;
+  admin_value: number | null;
+  status: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ChoreProposalWithChild extends ChoreProposal {
+  child_name: string;
 }

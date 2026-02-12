@@ -38,15 +38,22 @@ export default async function DashboardPage() {
               <div className="text-2xl font-bold">{stats.children.length}</div>
             </CardContent>
           </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Pending Approvals</CardTitle>
-              <ListChecks className="h-4 w-4 text-amber-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.pendingApprovals}</div>
-            </CardContent>
-          </Card>
+          <Link href="/approvals">
+            <Card className="hover:shadow-md transition-shadow cursor-pointer">
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">Pending Approvals</CardTitle>
+                <ListChecks className="h-4 w-4 text-amber-500" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{stats.pendingApprovals + stats.pendingProposals}</div>
+                {stats.pendingProposals > 0 && (
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {stats.pendingApprovals} chores · {stats.pendingProposals} proposals
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          </Link>
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">Total Balance</CardTitle>

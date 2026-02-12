@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getChild, getChores, getRewards, addTransaction, claimReward, assignChore, markChoreDone, approveChore } from "@/lib/actions";
+import { getChild, getChores, getRewards, addTransaction, claimReward, markChoreDone, approveChore } from "@/lib/actions";
 import { requireAdmin } from "@/lib/auth";
 import { Nav } from "@/components/nav";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,6 +11,7 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CheckCircle, Clock, Award, ArrowLeft, Plus, Minus, Gift } from "lucide-react";
+import { AssignChoreForm } from "@/components/assign-chore-form";
 
 export default async function ChildDetailPage({ params }: { params: Promise<{ id: string }> }) {
   await requireAdmin();
@@ -60,32 +61,15 @@ export default async function ChildDetailPage({ params }: { params: Promise<{ id
             <Card>
               <CardHeader><CardTitle className="text-base">Assign a Chore</CardTitle></CardHeader>
               <CardContent>
-                <form action={assignChore} className="flex flex-wrap items-end gap-4">
-                  <input type="hidden" name="childId" value={child.id} />
-                  <div className="flex-1 min-w-[200px]">
-                    <Label htmlFor="choreId">Chore</Label>
-                    <select
-                      id="choreId"
-                      name="choreId"
-                      required
-                      className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-                    >
-                      <option value="">Select a chore...</option>
-                      {chores.map((c) => (
-                        <option key={c.id} value={c.id}>{c.title} (£{c.value.toFixed(2)})</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="w-40">
-                    <Label htmlFor="dueDate">Due Date</Label>
-                    <Input id="dueDate" name="dueDate" type="date" />
-                  </div>
-                  <Button type="submit" className="bg-violet-600 hover:bg-violet-700">Assign</Button>
-                </form>
-                {chores.length === 0 && (
-                  <p className="text-sm text-muted-foreground mt-2">
+                {chores.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
                     No chores defined yet. <Link href="/chores" className="text-violet-600 hover:underline">Create chores first</Link>.
                   </p>
+                ) : (
+                  <AssignChoreForm
+                    childId={child.id}
+                    chores={chores.map((c) => ({ id: c.id, title: c.title, value: c.value, frequency: c.frequency }))}
+                  />
                 )}
               </CardContent>
             </Card>

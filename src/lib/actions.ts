@@ -14,6 +14,8 @@ import type {
   RewardClaimWithReward,
   RewardWithClaimCount,
   User,
+  ChoreProposal,
+  ChoreProposalWithChild,
 } from "@/lib/types";
 
 function uid() {
@@ -128,7 +130,9 @@ export async function createChore(formData: FormData) {
   const description = (formData.get("description") as string) || "";
   const value = parseFloat(formData.get("value") as string) || 0;
   const frequency = (formData.get("frequency") as string) || "one-off";
-  await sql`INSERT INTO chores (id, title, description, value, frequency) VALUES (${id}, ${title}, ${description}, ${value}, ${frequency})`;
+  const dayOfWeekRaw = formData.get("dayOfWeek") as string;
+  const dayOfWeek = frequency === "weekly" && dayOfWeekRaw !== "" ? parseInt(dayOfWeekRaw) : null;
+  await sql`INSERT INTO chores (id, title, description, value, frequency, day_of_week) VALUES (${id}, ${title}, ${description}, ${value}, ${frequency}, ${dayOfWeek})`;
   revalidatePath("/");
   revalidatePath("/chores");
 }
@@ -144,12 +148,49 @@ export async function deleteChore(id: string) {
 
 export async function assignChore(formData: FormData) {
   await ensureDb();
-  const id = uid();
   const childId = formData.get("childId") as string;
   const choreId = formData.get("choreId") as string;
+  const endDateStr = formData.get("endDate") as string;
   const dueDateStr = formData.get("dueDate") as string;
-  const dueDate = dueDateStr || null;
-  await sql`INSERT INTO chore_assignments (id, child_id, chore_id, due_date) VALUES (${id}, ${childId}, ${choreId}, ${dueDate})`;
+
+  // Look up the chore to determine frequency
+  const choreRows = await sql`SELECT * FROM chores WHERE id = ${choreId}`;
+  const chore = choreRows[0] ? numify(choreRows[0], "value") as Chore : null;
+  if (!chore) return;
+
+  const sourceId = uid();
+
+  if (chore.frequency === "daily" && endDateStr) {
+    // Generate one assignment per day from today to end date
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(endDateStr);
+    end.setHours(0, 0, 0, 0);
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      const dateStr = d.toISOString().split("T")[0];
+      const id = uid();
+      await sql`INSERT INTO chore_assignments (id, child_id, chore_id, due_date, end_date, recurrence_source_id) VALUES (${id}, ${childId}, ${choreId}, ${dateStr}, ${endDateStr}, ${sourceId})`;
+    }
+  } else if (chore.frequency === "weekly" && endDateStr && chore.day_of_week !== null) {
+    // Generate one assignment per matching weekday from today to end date
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(endDateStr);
+    end.setHours(0, 0, 0, 0);
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      if (d.getDay() === chore.day_of_week) {
+        const dateStr = d.toISOString().split("T")[0];
+        const id = uid();
+        await sql`INSERT INTO chore_assignments (id, child_id, chore_id, due_date, end_date, recurrence_source_id) VALUES (${id}, ${childId}, ${choreId}, ${dateStr}, ${endDateStr}, ${sourceId})`;
+      }
+    }
+  } else {
+    // One-off: single assignment with optional date
+    const dueDate = dueDateStr || null;
+    const id = uid();
+    await sql`INSERT INTO chore_assignments (id, child_id, chore_id, due_date) VALUES (${id}, ${childId}, ${choreId}, ${dueDate})`;
+  }
+
   revalidatePath("/");
   revalidatePath("/chores");
   revalidatePath(`/children/${childId}`);
@@ -417,9 +458,113 @@ export async function getDashboardStats() {
   const pendingRow = await sql`SELECT COUNT(*) AS cnt FROM chore_assignments WHERE status = 'completed'`;
   const choreRow = await sql`SELECT COUNT(*) AS cnt FROM chores`;
   const rewardRow = await sql`SELECT COUNT(*) AS cnt FROM rewards`;
+  const proposalRow = await sql`SELECT COUNT(*) AS cnt FROM chore_proposals WHERE status IN ('pending', 'countered')`;
   const pendingApprovals = Number(pendingRow[0].cnt);
   const totalChores = Number(choreRow[0].cnt);
   const rewardCount = Number(rewardRow[0].cnt);
+  const pendingProposals = Number(proposalRow[0].cnt);
   const totalBalance = children.reduce((sum, c) => sum + c.balance, 0);
-  return { children, pendingApprovals, totalChores, totalBalance, rewardCount };
+  return { children, pendingApprovals, totalChores, totalBalance, rewardCount, pendingProposals };
+}
+
+// ─── Chore Proposals (Barter System) ────────────────────────
+
+export async function getChildProposals(childId: string) {
+  await ensureDb();
+  const rows = await sql`SELECT * FROM chore_proposals WHERE child_id = ${childId} ORDER BY created_at DESC`;
+  return rows.map(r => numify(r, "requested_value", "admin_value")) as ChoreProposal[];
+}
+
+export async function createProposal(formData: FormData) {
+  await ensureDb();
+  const id = uid();
+  const childId = formData.get("childId") as string;
+  const title = formData.get("title") as string;
+  const description = (formData.get("description") as string) || "";
+  const requestedValue = parseFloat(formData.get("requestedValue") as string) || 0;
+  await sql`INSERT INTO chore_proposals (id, child_id, title, description, requested_value) VALUES (${id}, ${childId}, ${title}, ${description}, ${requestedValue})`;
+  revalidatePath("/my");
+  revalidatePath("/approvals");
+}
+
+export async function childAcceptCounter(proposalId: string) {
+  await ensureDb();
+  const rows = await sql`SELECT * FROM chore_proposals WHERE id = ${proposalId}`;
+  const proposal = rows[0] ? numify(rows[0], "requested_value", "admin_value") as ChoreProposal : null;
+  if (!proposal || proposal.status !== "countered" || proposal.admin_value === null) return;
+
+  // Accept: create a one-off chore + assignment at the agreed (admin) value
+  const choreId = uid();
+  const assignmentId = uid();
+  await sql`INSERT INTO chores (id, title, description, value, frequency) VALUES (${choreId}, ${proposal.title}, ${proposal.description}, ${proposal.admin_value}, 'one-off')`;
+  await sql`INSERT INTO chore_assignments (id, child_id, chore_id) VALUES (${assignmentId}, ${proposal.child_id}, ${choreId})`;
+  await sql`UPDATE chore_proposals SET status = 'accepted', updated_at = NOW() WHERE id = ${proposalId}`;
+  revalidatePath("/my");
+  revalidatePath("/approvals");
+  revalidatePath("/chores");
+  revalidatePath(`/children/${proposal.child_id}`);
+}
+
+export async function childDeclineCounter(proposalId: string) {
+  await ensureDb();
+  await sql`UPDATE chore_proposals SET status = 'declined', updated_at = NOW() WHERE id = ${proposalId}`;
+  revalidatePath("/my");
+  revalidatePath("/approvals");
+}
+
+export async function adminApproveProposal(proposalId: string) {
+  await ensureDb();
+  const rows = await sql`SELECT * FROM chore_proposals WHERE id = ${proposalId}`;
+  const proposal = rows[0] ? numify(rows[0], "requested_value", "admin_value") as ChoreProposal : null;
+  if (!proposal || proposal.status !== "pending") return;
+
+  // Approve at requested price: create chore + assignment
+  const choreId = uid();
+  const assignmentId = uid();
+  await sql`INSERT INTO chores (id, title, description, value, frequency) VALUES (${choreId}, ${proposal.title}, ${proposal.description}, ${proposal.requested_value}, 'one-off')`;
+  await sql`INSERT INTO chore_assignments (id, child_id, chore_id) VALUES (${assignmentId}, ${proposal.child_id}, ${choreId})`;
+  await sql`UPDATE chore_proposals SET status = 'accepted', updated_at = NOW() WHERE id = ${proposalId}`;
+  revalidatePath("/my");
+  revalidatePath("/approvals");
+  revalidatePath("/chores");
+  revalidatePath(`/children/${proposal.child_id}`);
+}
+
+export async function adminCounterProposal(formData: FormData) {
+  await ensureDb();
+  const proposalId = formData.get("proposalId") as string;
+  const adminValue = parseFloat(formData.get("adminValue") as string);
+  if (!proposalId || isNaN(adminValue)) return;
+  await sql`UPDATE chore_proposals SET admin_value = ${adminValue}, status = 'countered', updated_at = NOW() WHERE id = ${proposalId}`;
+  revalidatePath("/my");
+  revalidatePath("/approvals");
+}
+
+export async function adminRejectProposal(proposalId: string) {
+  await ensureDb();
+  await sql`UPDATE chore_proposals SET status = 'rejected', updated_at = NOW() WHERE id = ${proposalId}`;
+  revalidatePath("/my");
+  revalidatePath("/approvals");
+}
+
+export async function getPendingApprovals() {
+  await ensureDb();
+  const choreApprovals = (await sql`
+    SELECT ca.*, c.title AS chore_title, c.value AS chore_value, ch.name AS child_name, ch.id AS child_id, ch.avatar AS child_avatar
+    FROM chore_assignments ca
+    JOIN chores c ON ca.chore_id = c.id
+    JOIN children ch ON ca.child_id = ch.id
+    WHERE ca.status = 'completed'
+    ORDER BY ca.completed_at DESC
+  `).map(r => numify(r, "chore_value")) as (ChoreAssignmentWithChore & { child_name: string; child_avatar: string })[];
+
+  const proposals = (await sql`
+    SELECT cp.*, ch.name AS child_name
+    FROM chore_proposals cp
+    JOIN children ch ON cp.child_id = ch.id
+    WHERE cp.status IN ('pending')
+    ORDER BY cp.created_at DESC
+  `).map(r => numify(r, "requested_value", "admin_value")) as ChoreProposalWithChild[];
+
+  return { choreApprovals, proposals };
 }
