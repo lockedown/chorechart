@@ -6,6 +6,17 @@ const DATABASE_URL = process.env.DATABASE_URL!;
 
 export const sql = neon(DATABASE_URL);
 
+// Postgres NUMERIC columns come back as strings — coerce to JS numbers
+export function numify<T extends Record<string, unknown>>(row: T, ...keys: string[]): T {
+  const out = { ...row };
+  for (const k of keys) {
+    if (k in out && out[k] !== null && out[k] !== undefined) {
+      (out as Record<string, unknown>)[k] = Number(out[k]);
+    }
+  }
+  return out;
+}
+
 let _initialized = false;
 
 export async function ensureDb() {

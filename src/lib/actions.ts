@@ -1,6 +1,6 @@
 "use server";
 
-import { sql, ensureDb } from "@/lib/db";
+import { sql, ensureDb, numify } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import { randomUUID } from "crypto";
 import { hashSync } from "bcryptjs";
@@ -24,14 +24,16 @@ function uid() {
 
 export async function getChildren() {
   await ensureDb();
-  const children = await sql`SELECT * FROM children ORDER BY name ASC` as Child[];
+  const rawChildren = await sql`SELECT * FROM children ORDER BY name ASC`;
+  const children = rawChildren.map(r => numify(r, "balance")) as Child[];
   const result = [];
   for (const child of children) {
-    const assignedChores = await sql`
+    const rawChores = await sql`
       SELECT ca.*, c.title AS chore_title, c.value AS chore_value, c.description AS chore_description
       FROM chore_assignments ca JOIN chores c ON ca.chore_id = c.id
       WHERE ca.child_id = ${child.id} ORDER BY ca.created_at DESC
-    ` as ChoreAssignmentWithChore[];
+    `;
+    const assignedChores = rawChores.map(r => numify(r, "chore_value")) as ChoreAssignmentWithChore[];
     result.push({ ...child, assignedChores });
   }
   return result;
@@ -39,19 +41,21 @@ export async function getChildren() {
 
 export async function getChild(id: string) {
   await ensureDb();
-  const rows = await sql`SELECT * FROM children WHERE id = ${id}` as Child[];
-  const child = rows[0];
+  const rows = await sql`SELECT * FROM children WHERE id = ${id}`;
+  const child = rows[0] ? numify(rows[0], "balance") as Child : null;
   if (!child) return null;
 
-  const assignedChores = await sql`
+  const rawAssigned = await sql`
     SELECT ca.*, c.title AS chore_title, c.value AS chore_value, c.description AS chore_description
     FROM chore_assignments ca JOIN chores c ON ca.chore_id = c.id
     WHERE ca.child_id = ${id} ORDER BY ca.created_at DESC
-  ` as ChoreAssignmentWithChore[];
+  `;
+  const assignedChores = rawAssigned.map(r => numify(r, "chore_value")) as ChoreAssignmentWithChore[];
 
-  const transactions = await sql`
+  const rawTxns = await sql`
     SELECT * FROM transactions WHERE child_id = ${id} ORDER BY created_at DESC
-  ` as Transaction[];
+  `;
+  const transactions = rawTxns.map(r => numify(r, "amount")) as Transaction[];
 
   const rewardClaims = await sql`
     SELECT rc.*, r.title AS reward_title
@@ -103,7 +107,8 @@ export async function deleteChild(id: string) {
 
 export async function getChores() {
   await ensureDb();
-  const chores = await sql`SELECT * FROM chores ORDER BY title ASC` as Chore[];
+  const rawChores = await sql`SELECT * FROM chores ORDER BY title ASC`;
+  const chores = rawChores.map(r => numify(r, "value")) as Chore[];
   const result = [];
   for (const chore of chores) {
     const assignments = await sql`
@@ -163,8 +168,8 @@ export async function approveChore(assignmentId: string) {
     SELECT ca.*, c.value AS chore_value, c.title AS chore_title
     FROM chore_assignments ca JOIN chores c ON ca.chore_id = c.id
     WHERE ca.id = ${assignmentId}
-  ` as (ChoreAssignmentWithChore & { chore_value: number; chore_title: string })[];
-  const assignment = rows[0];
+  `;
+  const assignment = rows[0] ? numify(rows[0], "chore_value") as (ChoreAssignmentWithChore & { chore_value: number; chore_title: string }) : undefined;
   if (!assignment) return;
 
   const txnId = uid();
@@ -201,7 +206,8 @@ export async function addTransaction(formData: FormData) {
 
 export async function getRewards() {
   await ensureDb();
-  const rewards = await sql`SELECT * FROM rewards ORDER BY title ASC` as Reward[];
+  const rawRewards = await sql`SELECT * FROM rewards ORDER BY title ASC`;
+  const rewards = rawRewards.map(r => numify(r, "cost")) as Reward[];
   const result = [];
   for (const reward of rewards) {
     const row = await sql`SELECT COUNT(*) AS claim_count FROM reward_claims WHERE reward_id = ${reward.id}`;
@@ -231,10 +237,10 @@ export async function deleteReward(id: string) {
 
 export async function claimReward(childId: string, rewardId: string) {
   await ensureDb();
-  const rewardRows = await sql`SELECT * FROM rewards WHERE id = ${rewardId}` as Reward[];
-  const childRows = await sql`SELECT * FROM children WHERE id = ${childId}` as Child[];
-  const reward = rewardRows[0];
-  const child = childRows[0];
+  const rewardRows = await sql`SELECT * FROM rewards WHERE id = ${rewardId}`;
+  const childRows = await sql`SELECT * FROM children WHERE id = ${childId}`;
+  const reward = rewardRows[0] ? numify(rewardRows[0], "cost") as Reward : undefined;
+  const child = childRows[0] ? numify(childRows[0], "balance") as Child : undefined;
   if (!reward || !child || child.balance < reward.cost) return;
 
   const claimId = uid();
@@ -267,8 +273,8 @@ export async function adminSetBalance(formData: FormData) {
   const newBalance = parseFloat(formData.get("balance") as string);
   if (isNaN(newBalance)) return;
 
-  const childRows = await sql`SELECT * FROM children WHERE id = ${childId}` as Child[];
-  const child = childRows[0];
+  const childRows = await sql`SELECT * FROM children WHERE id = ${childId}`;
+  const child = childRows[0] ? numify(childRows[0], "balance") as Child : undefined;
   if (!child) return;
 
   const diff = newBalance - child.balance;
@@ -339,8 +345,8 @@ export async function adminDeleteAssignment(assignmentId: string) {
 
 export async function adminDeleteTransaction(transactionId: string) {
   await ensureDb();
-  const rows = await sql`SELECT * FROM transactions WHERE id = ${transactionId}` as Transaction[];
-  const txn = rows[0];
+  const rows = await sql`SELECT * FROM transactions WHERE id = ${transactionId}`;
+  const txn = rows[0] ? numify(rows[0], "amount") as Transaction : undefined;
   if (!txn) return;
 
   await sql`UPDATE children SET balance = balance - ${txn.amount}, updated_at = NOW() WHERE id = ${txn.child_id}`;
@@ -360,21 +366,21 @@ export async function adminDeleteAllAssignments() {
 
 export async function adminGetAllData() {
   await ensureDb();
-  const children = await sql`SELECT * FROM children ORDER BY name ASC` as Child[];
-  const chores = await sql`SELECT * FROM chores ORDER BY title ASC` as Chore[];
-  const assignments = await sql`
+  const children = (await sql`SELECT * FROM children ORDER BY name ASC`).map(r => numify(r, "balance")) as Child[];
+  const chores = (await sql`SELECT * FROM chores ORDER BY title ASC`).map(r => numify(r, "value")) as Chore[];
+  const assignments = (await sql`
     SELECT ca.*, c.title AS chore_title, c.value AS chore_value, ch.name AS child_name
     FROM chore_assignments ca
     JOIN chores c ON ca.chore_id = c.id
     JOIN children ch ON ca.child_id = ch.id
     ORDER BY ca.created_at DESC
-  ` as (ChoreAssignmentWithChore & { child_name: string })[];
-  const transactions = await sql`
+  `).map(r => numify(r, "chore_value")) as (ChoreAssignmentWithChore & { child_name: string })[];
+  const transactions = (await sql`
     SELECT t.*, ch.name AS child_name
     FROM transactions t JOIN children ch ON t.child_id = ch.id
     ORDER BY t.created_at DESC
-  ` as (Transaction & { child_name: string })[];
-  const rewards = await sql`SELECT * FROM rewards ORDER BY title ASC` as Reward[];
+  `).map(r => numify(r, "amount")) as (Transaction & { child_name: string })[];
+  const rewards = (await sql`SELECT * FROM rewards ORDER BY title ASC`).map(r => numify(r, "cost")) as Reward[];
   const rewardClaims = await sql`
     SELECT rc.*, r.title AS reward_title, ch.name AS child_name
     FROM reward_claims rc
@@ -407,13 +413,13 @@ export async function adminNukeDatabase() {
 
 export async function getDashboardStats() {
   await ensureDb();
-  const children = await sql`SELECT * FROM children ORDER BY name ASC` as Child[];
+  const children = (await sql`SELECT * FROM children ORDER BY name ASC`).map(r => numify(r, "balance")) as Child[];
   const pendingRow = await sql`SELECT COUNT(*) AS cnt FROM chore_assignments WHERE status = 'completed'`;
   const choreRow = await sql`SELECT COUNT(*) AS cnt FROM chores`;
   const rewardRow = await sql`SELECT COUNT(*) AS cnt FROM rewards`;
   const pendingApprovals = Number(pendingRow[0].cnt);
   const totalChores = Number(choreRow[0].cnt);
   const rewardCount = Number(rewardRow[0].cnt);
-  const totalBalance = children.reduce((sum, c) => sum + Number(c.balance), 0);
+  const totalBalance = children.reduce((sum, c) => sum + c.balance, 0);
   return { children, pendingApprovals, totalChores, totalBalance, rewardCount };
 }
