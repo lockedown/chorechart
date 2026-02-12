@@ -29,15 +29,17 @@ export default async function DashboardPage() {
 
         {/* Stats cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Children</CardTitle>
-              <Users className="h-4 w-4 text-violet-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.children.length}</div>
-            </CardContent>
-          </Card>
+          <Link href="/children">
+            <Card className="hover:shadow-md transition-shadow cursor-pointer">
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">Children</CardTitle>
+                <Users className="h-4 w-4 text-violet-500" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{stats.children.length}</div>
+              </CardContent>
+            </Card>
+          </Link>
           <Link href="/approvals">
             <Card className="hover:shadow-md transition-shadow cursor-pointer">
               <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -63,15 +65,17 @@ export default async function DashboardPage() {
               <div className="text-2xl font-bold">£{stats.totalBalance.toFixed(2)}</div>
             </CardContent>
           </Card>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Rewards</CardTitle>
-              <Gift className="h-4 w-4 text-pink-500" />
-            </CardHeader>
-            <CardContent>
-              <div className="text-2xl font-bold">{stats.rewardCount}</div>
-            </CardContent>
-          </Card>
+          <Link href="/rewards">
+            <Card className="hover:shadow-md transition-shadow cursor-pointer">
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">Rewards</CardTitle>
+                <Gift className="h-4 w-4 text-pink-500" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{stats.rewardCount}</div>
+              </CardContent>
+            </Card>
+          </Link>
         </div>
 
         {/* Children overview */}
