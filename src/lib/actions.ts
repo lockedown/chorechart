@@ -27,19 +27,23 @@ function uid() {
 
 export async function getChildren() {
   await ensureDb();
-  const rawChildren = await sql`SELECT * FROM children ORDER BY name ASC`;
-  const children = rawChildren.map(r => numify(r, "balance")) as Child[];
-  const result = [];
-  for (const child of children) {
-    const rawChores = await sql`
+  const [rawChildren, rawAllChores] = await Promise.all([
+    sql`SELECT * FROM children ORDER BY name ASC`,
+    sql`
       SELECT ca.*, c.title AS chore_title, c.value AS chore_value, c.description AS chore_description
       FROM chore_assignments ca JOIN chores c ON ca.chore_id = c.id
-      WHERE ca.child_id = ${child.id} ORDER BY ca.created_at DESC
-    `;
-    const assignedChores = rawChores.map(r => numify(r, "chore_value")) as ChoreAssignmentWithChore[];
-    result.push({ ...child, assignedChores });
+      ORDER BY ca.created_at DESC
+    `,
+  ]);
+  const children = rawChildren.map(r => numify(r, "balance")) as Child[];
+  const allChores = rawAllChores.map(r => numify(r, "chore_value")) as ChoreAssignmentWithChore[];
+  const choresByChild = new Map<string, ChoreAssignmentWithChore[]>();
+  for (const chore of allChores) {
+    const list = choresByChild.get(chore.child_id) || [];
+    list.push(chore);
+    choresByChild.set(chore.child_id, list);
   }
-  return result;
+  return children.map(child => ({ ...child, assignedChores: choresByChild.get(child.id) || [] }));
 }
 
 export async function getChild(id: string) {
@@ -48,23 +52,22 @@ export async function getChild(id: string) {
   const child = rows[0] ? numify(rows[0], "balance") as Child : null;
   if (!child) return null;
 
-  const rawAssigned = await sql`
-    SELECT ca.*, c.title AS chore_title, c.value AS chore_value, c.description AS chore_description
-    FROM chore_assignments ca JOIN chores c ON ca.chore_id = c.id
-    WHERE ca.child_id = ${id} ORDER BY ca.created_at DESC
-  `;
+  const [rawAssigned, rawTxns, rawClaims] = await Promise.all([
+    sql`
+      SELECT ca.*, c.title AS chore_title, c.value AS chore_value, c.description AS chore_description
+      FROM chore_assignments ca JOIN chores c ON ca.chore_id = c.id
+      WHERE ca.child_id = ${id} ORDER BY ca.created_at DESC
+    `,
+    sql`SELECT * FROM transactions WHERE child_id = ${id} ORDER BY created_at DESC`,
+    sql`
+      SELECT rc.*, r.title AS reward_title
+      FROM reward_claims rc JOIN rewards r ON rc.reward_id = r.id
+      WHERE rc.child_id = ${id} ORDER BY rc.created_at DESC
+    `,
+  ]);
   const assignedChores = rawAssigned.map(r => numify(r, "chore_value")) as ChoreAssignmentWithChore[];
-
-  const rawTxns = await sql`
-    SELECT * FROM transactions WHERE child_id = ${id} ORDER BY created_at DESC
-  `;
   const transactions = rawTxns.map(r => numify(r, "amount")) as Transaction[];
-
-  const rewardClaims = await sql`
-    SELECT rc.*, r.title AS reward_title
-    FROM reward_claims rc JOIN rewards r ON rc.reward_id = r.id
-    WHERE rc.child_id = ${id} ORDER BY rc.created_at DESC
-  ` as RewardClaimWithReward[];
+  const rewardClaims = rawClaims as RewardClaimWithReward[];
 
   return { ...child, assignedChores, transactions, rewardClaims };
 }
@@ -110,18 +113,22 @@ export async function deleteChild(id: string) {
 
 export async function getChores() {
   await ensureDb();
-  const rawChores = await sql`SELECT * FROM chores ORDER BY title ASC`;
-  const chores = rawChores.map(r => numify(r, "value")) as Chore[];
-  const result = [];
-  for (const chore of chores) {
-    const assignments = await sql`
+  const [rawChores, rawAllAssignments] = await Promise.all([
+    sql`SELECT * FROM chores ORDER BY title ASC`,
+    sql`
       SELECT ca.*, ch.name AS child_name
       FROM chore_assignments ca JOIN children ch ON ca.child_id = ch.id
-      WHERE ca.chore_id = ${chore.id}
-    ` as ChoreAssignmentWithChild[];
-    result.push({ ...chore, assignments });
+    `,
+  ]);
+  const chores = rawChores.map(r => numify(r, "value")) as Chore[];
+  const allAssignments = rawAllAssignments as ChoreAssignmentWithChild[];
+  const assignmentsByChore = new Map<string, ChoreAssignmentWithChild[]>();
+  for (const a of allAssignments) {
+    const list = assignmentsByChore.get(a.chore_id) || [];
+    list.push(a);
+    assignmentsByChore.set(a.chore_id, list);
   }
-  return result;
+  return chores.map(chore => ({ ...chore, assignments: assignmentsByChore.get(chore.id) || [] }));
 }
 
 export async function createChore(formData: FormData) {
@@ -248,14 +255,13 @@ export async function addTransaction(formData: FormData) {
 
 export async function getRewards() {
   await ensureDb();
-  const rawRewards = await sql`SELECT * FROM rewards ORDER BY title ASC`;
-  const rewards = rawRewards.map(r => numify(r, "cost")) as Reward[];
-  const result = [];
-  for (const reward of rewards) {
-    const row = await sql`SELECT COUNT(*) AS claim_count FROM reward_claims WHERE reward_id = ${reward.id}`;
-    result.push({ ...reward, claim_count: Number(row[0].claim_count) } as RewardWithClaimCount);
-  }
-  return result;
+  const rawRewards = await sql`
+    SELECT r.*, COALESCE(rc.cnt, 0) AS claim_count
+    FROM rewards r
+    LEFT JOIN (SELECT reward_id, COUNT(*) AS cnt FROM reward_claims GROUP BY reward_id) rc ON rc.reward_id = r.id
+    ORDER BY r.title ASC
+  `;
+  return rawRewards.map(r => numify(r, "cost", "claim_count")) as RewardWithClaimCount[];
 }
 
 export async function createReward(formData: FormData) {
@@ -279,8 +285,10 @@ export async function deleteReward(id: string) {
 
 export async function claimReward(childId: string, rewardId: string) {
   await ensureDb();
-  const rewardRows = await sql`SELECT * FROM rewards WHERE id = ${rewardId}`;
-  const childRows = await sql`SELECT * FROM children WHERE id = ${childId}`;
+  const [rewardRows, childRows] = await Promise.all([
+    sql`SELECT * FROM rewards WHERE id = ${rewardId}`,
+    sql`SELECT * FROM children WHERE id = ${childId}`,
+  ]);
   const reward = rewardRows[0] ? numify(rewardRows[0], "cost") as Reward : undefined;
   const child = childRows[0] ? numify(childRows[0], "balance") as Child : undefined;
   if (!reward || !child || child.balance < reward.cost) return;
@@ -408,28 +416,36 @@ export async function adminDeleteAllAssignments() {
 
 export async function adminGetAllData() {
   await ensureDb();
-  const children = (await sql`SELECT * FROM children ORDER BY name ASC`).map(r => numify(r, "balance")) as Child[];
-  const chores = (await sql`SELECT * FROM chores ORDER BY title ASC`).map(r => numify(r, "value")) as Chore[];
-  const assignments = (await sql`
-    SELECT ca.*, c.title AS chore_title, c.value AS chore_value, ch.name AS child_name
-    FROM chore_assignments ca
-    JOIN chores c ON ca.chore_id = c.id
-    JOIN children ch ON ca.child_id = ch.id
-    ORDER BY ca.created_at DESC
-  `).map(r => numify(r, "chore_value")) as (ChoreAssignmentWithChore & { child_name: string })[];
-  const transactions = (await sql`
-    SELECT t.*, ch.name AS child_name
-    FROM transactions t JOIN children ch ON t.child_id = ch.id
-    ORDER BY t.created_at DESC
-  `).map(r => numify(r, "amount")) as (Transaction & { child_name: string })[];
-  const rewards = (await sql`SELECT * FROM rewards ORDER BY title ASC`).map(r => numify(r, "cost")) as Reward[];
-  const rewardClaims = await sql`
-    SELECT rc.*, r.title AS reward_title, ch.name AS child_name
-    FROM reward_claims rc
-    JOIN rewards r ON rc.reward_id = r.id
-    JOIN children ch ON rc.child_id = ch.id
-    ORDER BY rc.created_at DESC
-  ` as (RewardClaimWithReward & { child_name: string })[];
+  const [rawChildren, rawChores, rawAssignments, rawTransactions, rawRewards, rawClaims] = await Promise.all([
+    sql`SELECT * FROM children ORDER BY name ASC`,
+    sql`SELECT * FROM chores ORDER BY title ASC`,
+    sql`
+      SELECT ca.*, c.title AS chore_title, c.value AS chore_value, ch.name AS child_name
+      FROM chore_assignments ca
+      JOIN chores c ON ca.chore_id = c.id
+      JOIN children ch ON ca.child_id = ch.id
+      ORDER BY ca.created_at DESC
+    `,
+    sql`
+      SELECT t.*, ch.name AS child_name
+      FROM transactions t JOIN children ch ON t.child_id = ch.id
+      ORDER BY t.created_at DESC
+    `,
+    sql`SELECT * FROM rewards ORDER BY title ASC`,
+    sql`
+      SELECT rc.*, r.title AS reward_title, ch.name AS child_name
+      FROM reward_claims rc
+      JOIN rewards r ON rc.reward_id = r.id
+      JOIN children ch ON rc.child_id = ch.id
+      ORDER BY rc.created_at DESC
+    `,
+  ]);
+  const children = rawChildren.map(r => numify(r, "balance")) as Child[];
+  const chores = rawChores.map(r => numify(r, "value")) as Chore[];
+  const assignments = rawAssignments.map(r => numify(r, "chore_value")) as (ChoreAssignmentWithChore & { child_name: string })[];
+  const transactions = rawTransactions.map(r => numify(r, "amount")) as (Transaction & { child_name: string })[];
+  const rewards = rawRewards.map(r => numify(r, "cost")) as Reward[];
+  const rewardClaims = rawClaims as (RewardClaimWithReward & { child_name: string })[];
 
   return { children, chores, assignments, transactions, rewards, rewardClaims };
 }
@@ -455,11 +471,14 @@ export async function adminNukeDatabase() {
 
 export async function getDashboardStats() {
   await ensureDb();
-  const children = (await sql`SELECT * FROM children ORDER BY name ASC`).map(r => numify(r, "balance")) as Child[];
-  const pendingRow = await sql`SELECT COUNT(*) AS cnt FROM chore_assignments WHERE status = 'completed'`;
-  const choreRow = await sql`SELECT COUNT(*) AS cnt FROM chores`;
-  const rewardRow = await sql`SELECT COUNT(*) AS cnt FROM rewards`;
-  const proposalRow = await sql`SELECT COUNT(*) AS cnt FROM chore_proposals WHERE status IN ('pending', 'countered')`;
+  const [rawChildren, pendingRow, choreRow, rewardRow, proposalRow] = await Promise.all([
+    sql`SELECT * FROM children ORDER BY name ASC`,
+    sql`SELECT COUNT(*) AS cnt FROM chore_assignments WHERE status = 'completed'`,
+    sql`SELECT COUNT(*) AS cnt FROM chores`,
+    sql`SELECT COUNT(*) AS cnt FROM rewards`,
+    sql`SELECT COUNT(*) AS cnt FROM chore_proposals WHERE status IN ('pending', 'countered')`,
+  ]);
+  const children = rawChildren.map(r => numify(r, "balance")) as Child[];
   const pendingApprovals = Number(pendingRow[0].cnt);
   const totalChores = Number(choreRow[0].cnt);
   const rewardCount = Number(rewardRow[0].cnt);
@@ -501,23 +520,22 @@ export async function deleteSavingsGoal(goalId: string) {
 
 export async function getChildStreak(childId: string): Promise<{ current: number; best: number }> {
   await ensureDb();
-  // Get all assignments with due_date that are approved, ordered by date desc
+  // Single query: group by due_date, compare total vs approved count
   const rows = await sql`
-    SELECT DISTINCT due_date FROM chore_assignments
+    SELECT due_date,
+           COUNT(*) AS total,
+           COUNT(*) FILTER (WHERE status = 'approved') AS approved
+    FROM chore_assignments
     WHERE child_id = ${childId} AND due_date IS NOT NULL
+    GROUP BY due_date
     ORDER BY due_date DESC
   `;
 
-  if (rows.length === 0) return { current: 0, best: 0 };
-
-  // For each date that has assignments, check if ALL assignments for that date are approved
+  // Dates where every assignment is approved
   const approvedDates: string[] = [];
   for (const row of rows) {
-    const date = row.due_date as string;
-    const total = await sql`SELECT COUNT(*) AS cnt FROM chore_assignments WHERE child_id = ${childId} AND due_date = ${date}`;
-    const done = await sql`SELECT COUNT(*) AS cnt FROM chore_assignments WHERE child_id = ${childId} AND due_date = ${date} AND status = 'approved'`;
-    if (Number(total[0].cnt) > 0 && Number(total[0].cnt) === Number(done[0].cnt)) {
-      approvedDates.push(date);
+    if (Number(row.total) > 0 && Number(row.total) === Number(row.approved)) {
+      approvedDates.push(row.due_date as string);
     }
   }
 
@@ -533,7 +551,6 @@ export async function getChildStreak(childId: string): Promise<{ current: number
   let current = 0;
   let checkDate = new Date(today);
 
-  // Start from today; if today has no approved chores, try yesterday
   const todayStr = today.toISOString().split("T")[0];
   const yesterdayStr = yesterday.toISOString().split("T")[0];
   if (!dateSet.has(todayStr) && !dateSet.has(yesterdayStr)) {
@@ -656,22 +673,24 @@ export async function adminRejectProposal(proposalId: string) {
 
 export async function getPendingApprovals() {
   await ensureDb();
-  const choreApprovals = (await sql`
-    SELECT ca.*, c.title AS chore_title, c.value AS chore_value, ch.name AS child_name, ch.id AS child_id, ch.avatar AS child_avatar
-    FROM chore_assignments ca
-    JOIN chores c ON ca.chore_id = c.id
-    JOIN children ch ON ca.child_id = ch.id
-    WHERE ca.status = 'completed'
-    ORDER BY ca.completed_at DESC
-  `).map(r => numify(r, "chore_value")) as (ChoreAssignmentWithChore & { child_name: string; child_avatar: string })[];
-
-  const proposals = (await sql`
-    SELECT cp.*, ch.name AS child_name
-    FROM chore_proposals cp
-    JOIN children ch ON cp.child_id = ch.id
-    WHERE cp.status IN ('pending')
-    ORDER BY cp.created_at DESC
-  `).map(r => numify(r, "requested_value", "admin_value")) as ChoreProposalWithChild[];
-
+  const [rawApprovals, rawProposals] = await Promise.all([
+    sql`
+      SELECT ca.*, c.title AS chore_title, c.value AS chore_value, ch.name AS child_name, ch.id AS child_id, ch.avatar AS child_avatar
+      FROM chore_assignments ca
+      JOIN chores c ON ca.chore_id = c.id
+      JOIN children ch ON ca.child_id = ch.id
+      WHERE ca.status = 'completed'
+      ORDER BY ca.completed_at DESC
+    `,
+    sql`
+      SELECT cp.*, ch.name AS child_name
+      FROM chore_proposals cp
+      JOIN children ch ON cp.child_id = ch.id
+      WHERE cp.status IN ('pending')
+      ORDER BY cp.created_at DESC
+    `,
+  ]);
+  const choreApprovals = rawApprovals.map(r => numify(r, "chore_value")) as (ChoreAssignmentWithChore & { child_name: string; child_avatar: string })[];
+  const proposals = rawProposals.map(r => numify(r, "requested_value", "admin_value")) as ChoreProposalWithChild[];
   return { choreApprovals, proposals };
 }
