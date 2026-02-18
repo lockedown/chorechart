@@ -1,19 +1,19 @@
 import { getPendingApprovals, approveChore, adminApproveProposal, adminCounterProposal, adminRejectProposal } from "@/lib/actions";
 import { requireAdmin } from "@/lib/auth";
 import { Nav } from "@/components/nav";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { CheckCircle, Lightbulb } from "lucide-react";
 import Link from "next/link";
+import { ToastButton } from "@/components/toast-button";
+import { CounterForm } from "@/components/counter-form";
 
 export default async function ApprovalsPage() {
   await requireAdmin();
   const { choreApprovals, proposals } = await getPendingApprovals();
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-violet-50 via-white to-amber-50">
+    <div className="min-h-screen bg-gradient-to-br from-violet-50 via-white to-amber-50 dark:from-gray-950 dark:via-gray-900 dark:to-gray-950">
       <Nav role="admin" />
       <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6 sm:space-y-8">
         <div>
@@ -38,7 +38,7 @@ export default async function ApprovalsPage() {
                 <Card key={a.id}>
                   <CardContent className="flex items-center justify-between py-4">
                     <div className="flex items-center gap-3">
-                      <div className="h-10 w-10 rounded-full bg-violet-100 flex items-center justify-center text-lg">
+                      <div className="h-10 w-10 rounded-full bg-violet-100 dark:bg-violet-900 flex items-center justify-center text-lg">
                         {a.child_avatar || a.child_name.charAt(0).toUpperCase()}
                       </div>
                       <div>
@@ -50,11 +50,9 @@ export default async function ApprovalsPage() {
                         </p>
                       </div>
                     </div>
-                    <form action={async () => { "use server"; await approveChore(a.id); }}>
-                      <Button size="sm" className="bg-green-600 hover:bg-green-700">
-                        <CheckCircle className="h-4 w-4 mr-1" /> Approve
-                      </Button>
-                    </form>
+                    <ToastButton action={async () => { "use server"; await approveChore(a.id); }} message="Chore approved!" className="bg-green-600 hover:bg-green-700">
+                      <CheckCircle className="h-4 w-4 mr-1" /> Approve
+                    </ToastButton>
                   </CardContent>
                 </Card>
               ))}
@@ -90,19 +88,13 @@ export default async function ApprovalsPage() {
                         </p>
                       </div>
                       <div className="flex items-center gap-2 flex-wrap">
-                        <form action={async () => { "use server"; await adminApproveProposal(p.id); }}>
-                          <Button size="sm" className="bg-green-600 hover:bg-green-700">
-                            Accept £{p.requested_value.toFixed(2)}
-                          </Button>
-                        </form>
-                        <form action={adminCounterProposal} className="flex items-center gap-1">
-                          <input type="hidden" name="proposalId" value={p.id} />
-                          <Input name="adminValue" type="number" step="0.01" min="0.01" placeholder="£" className="w-20 h-8 text-sm" required />
-                          <Button size="sm" variant="outline" className="text-amber-600 border-amber-300">Counter</Button>
-                        </form>
-                        <form action={async () => { "use server"; await adminRejectProposal(p.id); }}>
-                          <Button size="sm" variant="outline" className="text-red-600 border-red-300">Reject</Button>
-                        </form>
+                        <ToastButton action={async () => { "use server"; await adminApproveProposal(p.id); }} message="Proposal accepted!" className="bg-green-600 hover:bg-green-700">
+                          Accept £{p.requested_value.toFixed(2)}
+                        </ToastButton>
+                        <CounterForm proposalId={p.id} />
+                        <ToastButton action={async () => { "use server"; await adminRejectProposal(p.id); }} message="Proposal rejected." variant="outline" className="text-red-600 border-red-300">
+                          Reject
+                        </ToastButton>
                       </div>
                     </div>
                   </CardContent>

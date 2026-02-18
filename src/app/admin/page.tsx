@@ -27,7 +27,7 @@ export default async function AdminPage() {
   const [data, users] = await Promise.all([adminGetAllData(), getUsers()]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-red-50 via-white to-orange-50">
+    <div className="min-h-screen bg-gradient-to-br from-red-50 via-white to-orange-50 dark:from-gray-950 dark:via-gray-900 dark:to-gray-950">
       <Nav role="admin" />
       <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6 sm:space-y-8">
         <div className="flex items-center gap-3">
@@ -39,7 +39,7 @@ export default async function AdminPage() {
         </div>
 
         {/* Danger zone */}
-        <Card className="border-red-200 bg-red-50/50">
+        <Card className="border-red-200 bg-red-50/50 dark:bg-red-950/30 dark:border-red-900">
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2 text-red-700">
               <AlertTriangle className="h-4 w-4" /> Danger Zone
@@ -91,7 +91,7 @@ export default async function AdminPage() {
                     <CardContent className="py-4">
                       <form action={adminSetBalance} className="flex items-center gap-4">
                         <input type="hidden" name="childId" value={child.id} />
-                        <div className="h-10 w-10 rounded-full bg-violet-100 flex items-center justify-center text-lg">
+                        <div className="h-10 w-10 rounded-full bg-violet-100 dark:bg-violet-900 flex items-center justify-center text-lg">
                           {child.avatar || child.name.charAt(0).toUpperCase()}
                         </div>
                         <div className="flex-1">

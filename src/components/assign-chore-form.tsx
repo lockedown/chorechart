@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { assignChore } from "@/lib/actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { toast } from "sonner";
 
 interface ChoreOption {
   id: string;
@@ -17,9 +18,10 @@ export function AssignChoreForm({ childId, chores }: { childId: string; chores: 
   const [selectedChoreId, setSelectedChoreId] = useState("");
   const selectedChore = chores.find((c) => c.id === selectedChoreId);
   const isRecurring = selectedChore?.frequency === "daily" || selectedChore?.frequency === "weekly";
+  const formRef = useRef<HTMLFormElement>(null);
 
   return (
-    <form action={assignChore} className="flex flex-wrap items-end gap-4">
+    <form ref={formRef} action={async (formData) => { await assignChore(formData); formRef.current?.reset(); setSelectedChoreId(""); toast.success("Chore assigned!"); }} className="flex flex-wrap items-end gap-4">
       <input type="hidden" name="childId" value={childId} />
       <div className="flex-1 min-w-[200px]">
         <Label htmlFor="choreId">Chore</Label>

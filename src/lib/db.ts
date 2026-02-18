@@ -137,6 +137,17 @@ export async function ensureDb() {
     )
   `;
 
+  await sql`
+    CREATE TABLE IF NOT EXISTS savings_goals (
+      id TEXT PRIMARY KEY,
+      child_id TEXT NOT NULL REFERENCES children(id) ON DELETE CASCADE,
+      title TEXT NOT NULL,
+      target_amount NUMERIC NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
+
   // Seed admin user
   const existing = await sql`SELECT id FROM users WHERE role = 'admin' LIMIT 1`;
   if (existing.length === 0) {

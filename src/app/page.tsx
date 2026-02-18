@@ -18,7 +18,7 @@ export default async function DashboardPage() {
   const stats = await getDashboardStats();
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-violet-50 via-white to-amber-50">
+    <div className="min-h-screen bg-gradient-to-br from-violet-50 via-white to-amber-50 dark:from-gray-950 dark:via-gray-900 dark:to-gray-950">
       <Nav role="admin" />
 
       <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6 sm:space-y-8">
@@ -99,7 +99,7 @@ export default async function DashboardPage() {
                 <Link key={child.id} href={`/children/${child.id}`}>
                   <Card className="hover:shadow-md transition-shadow cursor-pointer">
                     <CardContent className="flex items-center gap-4 py-4">
-                      <div className="h-12 w-12 rounded-full bg-violet-100 flex items-center justify-center text-xl">
+                      <div className="h-12 w-12 rounded-full bg-violet-100 dark:bg-violet-900 flex items-center justify-center text-xl">
                         {child.avatar || child.name.charAt(0).toUpperCase()}
                       </div>
                       <div className="flex-1">
@@ -117,7 +117,7 @@ export default async function DashboardPage() {
         {/* Quick links */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <Link href="/chores">
-            <Card className="hover:shadow-md transition-shadow cursor-pointer border-amber-200 bg-amber-50/50">
+            <Card className="hover:shadow-md transition-shadow cursor-pointer border-amber-200 bg-amber-50/50 dark:bg-amber-950/30 dark:border-amber-900">
               <CardContent className="py-6 text-center">
                 <ListChecks className="h-8 w-8 mx-auto mb-2 text-amber-500" />
                 <p className="font-semibold">Manage Chores</p>
@@ -126,7 +126,7 @@ export default async function DashboardPage() {
             </Card>
           </Link>
           <Link href="/rewards">
-            <Card className="hover:shadow-md transition-shadow cursor-pointer border-pink-200 bg-pink-50/50">
+            <Card className="hover:shadow-md transition-shadow cursor-pointer border-pink-200 bg-pink-50/50 dark:bg-pink-950/30 dark:border-pink-900">
               <CardContent className="py-6 text-center">
                 <Gift className="h-8 w-8 mx-auto mb-2 text-pink-500" />
                 <p className="font-semibold">Manage Rewards</p>
@@ -135,7 +135,7 @@ export default async function DashboardPage() {
             </Card>
           </Link>
           <Link href="/children">
-            <Card className="hover:shadow-md transition-shadow cursor-pointer border-violet-200 bg-violet-50/50">
+            <Card className="hover:shadow-md transition-shadow cursor-pointer border-violet-200 bg-violet-50/50 dark:bg-violet-950/30 dark:border-violet-900">
               <CardContent className="py-6 text-center">
                 <Users className="h-8 w-8 mx-auto mb-2 text-violet-500" />
                 <p className="font-semibold">Manage Children</p>

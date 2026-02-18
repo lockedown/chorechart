@@ -29,7 +29,7 @@ export default async function ChildDetailPage({ params }: { params: Promise<{ id
   const approvedChores = child.assignedChores.filter((a) => a.status === "approved");
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-violet-50 via-white to-amber-50">
+    <div className="min-h-screen bg-gradient-to-br from-violet-50 via-white to-amber-50 dark:from-gray-950 dark:via-gray-900 dark:to-gray-950">
       <Nav role="admin" />
       <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6 sm:space-y-8">
         {/* Header */}
@@ -37,7 +37,7 @@ export default async function ChildDetailPage({ params }: { params: Promise<{ id
           <Link href="/children">
             <Button variant="ghost" size="icon"><ArrowLeft className="h-4 w-4" /></Button>
           </Link>
-          <div className="h-12 w-12 sm:h-16 sm:w-16 rounded-full bg-violet-100 flex items-center justify-center text-2xl sm:text-3xl">
+          <div className="h-12 w-12 sm:h-16 sm:w-16 rounded-full bg-violet-100 dark:bg-violet-900 flex items-center justify-center text-2xl sm:text-3xl">
             {child.avatar || child.name.charAt(0).toUpperCase()}
           </div>
           <div>

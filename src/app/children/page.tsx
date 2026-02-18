@@ -14,7 +14,7 @@ export default async function ChildrenPage() {
   const children = await getChildren();
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-violet-50 via-white to-amber-50">
+    <div className="min-h-screen bg-gradient-to-br from-violet-50 via-white to-amber-50 dark:from-gray-950 dark:via-gray-900 dark:to-gray-950">
       <Nav role="admin" />
       <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6 sm:space-y-8">
         <div>
@@ -55,7 +55,7 @@ export default async function ChildrenPage() {
                 <CardContent className="py-4">
                   <div className="flex items-center gap-4">
                     <Link href={`/children/${child.id}`} className="flex items-center gap-4 flex-1">
-                      <div className="h-14 w-14 rounded-full bg-violet-100 flex items-center justify-center text-2xl">
+                      <div className="h-14 w-14 rounded-full bg-violet-100 dark:bg-violet-900 flex items-center justify-center text-2xl">
                         {child.avatar || child.name.charAt(0).toUpperCase()}
                       </div>
                       <div>

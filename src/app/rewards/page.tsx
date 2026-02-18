@@ -14,7 +14,7 @@ export default async function RewardsPage() {
   const rewards = await getRewards();
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-violet-50 via-white to-amber-50">
+    <div className="min-h-screen bg-gradient-to-br from-violet-50 via-white to-amber-50 dark:from-gray-950 dark:via-gray-900 dark:to-gray-950">
       <Nav role="admin" />
       <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6 sm:space-y-8">
         <div>

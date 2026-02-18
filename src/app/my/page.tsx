@@ -1,14 +1,16 @@
 import { getSession } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { getChild, getRewards, markChoreDone, claimReward, getChildProposals, childAcceptCounter, childDeclineCounter } from "@/lib/actions";
+import { getChild, getRewards, markChoreDone, claimReward, getChildProposals, childAcceptCounter, childDeclineCounter, getChildStreak, getChildSavingsGoals, deleteSavingsGoal } from "@/lib/actions";
 import { Nav } from "@/components/nav";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { CheckCircle, Clock, Award, Gift, Plus, Minus, Lightbulb } from "lucide-react";
+import { CheckCircle, Clock, Award, Gift, Plus, Minus, Lightbulb, Flame, Trophy, Target, Trash2 } from "lucide-react";
 import { ProposalForm } from "@/components/proposal-form";
+import { ToastButton } from "@/components/toast-button";
+import { SavingsGoalForm } from "@/components/savings-goal-form";
 
 export default async function MyPage() {
   const session = await getSession();
@@ -16,10 +18,12 @@ export default async function MyPage() {
   if (session.user.role === "admin") redirect("/");
   if (!session.user.child_id) redirect("/login");
 
-  const [child, rewards, proposals] = await Promise.all([
+  const [child, rewards, proposals, streak, savingsGoals] = await Promise.all([
     getChild(session.user.child_id),
     getRewards(),
     getChildProposals(session.user.child_id),
+    getChildStreak(session.user.child_id),
+    getChildSavingsGoals(session.user.child_id),
   ]);
 
   if (!child) redirect("/login");
@@ -35,19 +39,33 @@ export default async function MyPage() {
   const approvedChores = child.assignedChores.filter((a) => a.status === "approved");
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-violet-50 via-white to-amber-50">
+    <div className="min-h-screen bg-gradient-to-br from-violet-50 via-white to-amber-50 dark:from-gray-950 dark:via-gray-900 dark:to-gray-950">
       <Nav role="child" />
       <main className="max-w-4xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6 sm:space-y-8">
         {/* Header */}
         <div className="flex items-center gap-3 sm:gap-4">
-          <div className="h-12 w-12 sm:h-16 sm:w-16 rounded-full bg-violet-100 flex items-center justify-center text-2xl sm:text-3xl">
+          <div className="h-12 w-12 sm:h-16 sm:w-16 rounded-full bg-violet-100 dark:bg-violet-900 flex items-center justify-center text-2xl sm:text-3xl">
             {child.avatar || child.name.charAt(0).toUpperCase()}
           </div>
           <div>
             <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">Hi, {child.name}!</h2>
-            <p className="text-muted-foreground">
-              Your balance: <span className="text-lg font-semibold text-green-600">£{child.balance.toFixed(2)}</span>
-            </p>
+            <div className="flex flex-wrap items-center gap-3">
+              <p className="text-muted-foreground">
+                Your balance: <span className="text-lg font-semibold text-green-600">£{child.balance.toFixed(2)}</span>
+              </p>
+              {streak.current > 0 && (
+                <Badge variant="secondary" className="bg-orange-100 text-orange-700 gap-1">
+                  <Flame className="h-3.5 w-3.5" />
+                  {streak.current} day streak{streak.current > 1 ? "" : ""}
+                </Badge>
+              )}
+              {streak.best >= 3 && (
+                <Badge variant="secondary" className="bg-amber-100 text-amber-700 gap-1">
+                  <Trophy className="h-3.5 w-3.5" />
+                  Best: {streak.best} days
+                </Badge>
+              )}
+            </div>
           </div>
         </div>
 
@@ -80,11 +98,9 @@ export default async function MyPage() {
                             {a.due_date && ` · Due: ${new Date(a.due_date).toLocaleDateString()}`}
                           </p>
                         </div>
-                        <form action={async () => { "use server"; await markChoreDone(a.id); }}>
-                          <Button size="sm" variant="outline" className="text-amber-600 border-amber-300">
-                            <CheckCircle className="h-4 w-4 mr-1" /> Done!
-                          </Button>
-                        </form>
+                        <ToastButton action={async () => { "use server"; await markChoreDone(a.id); }} message="Chore marked as done!" variant="outline" className="text-amber-600 border-amber-300">
+                          <CheckCircle className="h-4 w-4 mr-1" /> Done!
+                        </ToastButton>
                       </CardContent>
                     </Card>
                   ))}
@@ -201,12 +217,12 @@ export default async function MyPage() {
                             )}
                             {p.status === "countered" && (
                               <div className="flex gap-2">
-                                <form action={async () => { "use server"; await childAcceptCounter(p.id); }}>
-                                  <Button size="sm" className="bg-green-600 hover:bg-green-700">Accept £{p.admin_value?.toFixed(2)}</Button>
-                                </form>
-                                <form action={async () => { "use server"; await childDeclineCounter(p.id); }}>
-                                  <Button size="sm" variant="outline" className="text-red-600 border-red-300">Decline</Button>
-                                </form>
+                                <ToastButton action={async () => { "use server"; await childAcceptCounter(p.id); }} message="Counter offer accepted!" className="bg-green-600 hover:bg-green-700">
+                                  Accept £{p.admin_value?.toFixed(2)}
+                                </ToastButton>
+                                <ToastButton action={async () => { "use server"; await childDeclineCounter(p.id); }} message="Counter offer declined." variant="outline" className="text-red-600 border-red-300">
+                                  Decline
+                                </ToastButton>
                               </div>
                             )}
                             {p.status === "accepted" && (
@@ -230,6 +246,48 @@ export default async function MyPage() {
 
           {/* ─── Rewards Tab ─── */}
           <TabsContent value="rewards" className="space-y-6">
+            {/* Savings Goals */}
+            <div>
+              <h3 className="font-semibold mb-3 flex items-center gap-2">
+                <Target className="h-4 w-4 text-emerald-500" /> Savings Goals
+              </h3>
+              {savingsGoals.length > 0 && (
+                <div className="space-y-3 mb-4">
+                  {savingsGoals.map((goal) => {
+                    const progress = Math.min((child.balance / goal.target_amount) * 100, 100);
+                    const reached = child.balance >= goal.target_amount;
+                    return (
+                      <Card key={goal.id} className={reached ? "border-emerald-300 bg-emerald-50/50" : ""}>
+                        <CardContent className="py-3">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                              <p className="font-medium">{goal.title}</p>
+                              {reached && <Badge variant="secondary" className="bg-emerald-100 text-emerald-700">Reached!</Badge>}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-semibold">£{child.balance.toFixed(2)} / £{goal.target_amount.toFixed(2)}</span>
+                              <ToastButton action={async () => { "use server"; await deleteSavingsGoal(goal.id); }} message="Goal removed." variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:text-destructive">
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </ToastButton>
+                            </div>
+                          </div>
+                          <div className="h-2.5 bg-gray-200 rounded-full overflow-hidden">
+                            <div
+                              className={`h-full rounded-full transition-all ${reached ? "bg-emerald-500" : "bg-violet-500"}`}
+                              style={{ width: `${progress}%` }}
+                            />
+                          </div>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                </div>
+              )}
+              <SavingsGoalForm childId={child.id} />
+            </div>
+
+            <Separator />
+
             <h3 className="font-semibold">Spend Your Money</h3>
             {rewards.length === 0 ? (
               <p className="text-sm text-muted-foreground">No rewards available yet.</p>
@@ -241,7 +299,7 @@ export default async function MyPage() {
                     <Card key={r.id} className={!canAfford ? "opacity-60" : ""}>
                       <CardContent className="flex items-center justify-between py-4">
                         <div className="flex items-center gap-3">
-                          <div className="h-10 w-10 rounded-full bg-pink-100 flex items-center justify-center text-lg">
+                          <div className="h-10 w-10 rounded-full bg-pink-100 dark:bg-pink-900 flex items-center justify-center text-lg">
                             {r.icon || <Gift className="h-5 w-5 text-pink-500" />}
                           </div>
                           <div>
@@ -249,11 +307,9 @@ export default async function MyPage() {
                             <p className="text-sm text-muted-foreground">£{r.cost.toFixed(2)}</p>
                           </div>
                         </div>
-                        <form action={async () => { "use server"; await claimReward(child.id, r.id); }}>
-                          <Button size="sm" disabled={!canAfford} className="bg-pink-600 hover:bg-pink-700">
-                            Claim
-                          </Button>
-                        </form>
+                        <ToastButton action={async () => { "use server"; await claimReward(child.id, r.id); }} message={`Claimed ${r.title}!`} className="bg-pink-600 hover:bg-pink-700" disabled={!canAfford}>
+                          Claim
+                        </ToastButton>
                       </CardContent>
                     </Card>
                   );

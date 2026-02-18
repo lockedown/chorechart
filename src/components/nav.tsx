@@ -18,6 +18,7 @@ import {
   ClipboardCheck,
 } from "lucide-react";
 import { logout } from "@/lib/auth";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 const adminLinks = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
@@ -49,7 +50,7 @@ export function Nav({ role = "admin" }: { role?: "admin" | "child" }) {
 
   return (
     <>
-      <header className="border-b bg-white/80 backdrop-blur-sm sticky top-0 z-30">
+      <header className="border-b bg-background/80 backdrop-blur-sm sticky top-0 z-30">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between">
           <Link href={role === "admin" ? "/" : "/my"}>
             <h1 className="text-xl sm:text-2xl font-bold tracking-tight bg-gradient-to-r from-violet-600 to-amber-500 bg-clip-text text-transparent">
@@ -75,6 +76,7 @@ export function Nav({ role = "admin" }: { role?: "admin" | "child" }) {
                 </Link>
               ))}
             </nav>
+            <ThemeToggle />
             <form action={logout}>
               <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
                 <LogOut className="h-4 w-4 mr-1" /> Logout
@@ -99,7 +101,7 @@ export function Nav({ role = "admin" }: { role?: "admin" | "child" }) {
           {/* Backdrop */}
           <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" onClick={() => setOpen(false)} />
           {/* Menu panel */}
-          <nav className="relative bg-white border-b shadow-lg">
+          <nav className="relative bg-background border-b shadow-lg">
             <div className="max-w-6xl mx-auto px-4 py-3 space-y-1">
               {links.map((link) => {
                 const Icon = link.icon;
@@ -110,8 +112,8 @@ export function Nav({ role = "admin" }: { role?: "admin" | "child" }) {
                     className={cn(
                       "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors",
                       isActive(pathname, link.href)
-                        ? "bg-violet-50 text-violet-600"
-                        : "text-muted-foreground hover:bg-gray-50 hover:text-foreground"
+                        ? "bg-violet-50 dark:bg-violet-950 text-violet-600"
+                        : "text-muted-foreground hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-foreground"
                     )}
                   >
                     <Icon className="h-4 w-4" />
@@ -123,7 +125,7 @@ export function Nav({ role = "admin" }: { role?: "admin" | "child" }) {
                 <form action={logout}>
                   <button
                     type="submit"
-                    className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-muted-foreground hover:bg-gray-50 hover:text-foreground transition-colors w-full"
+                    className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-muted-foreground hover:bg-gray-50 dark:hover:bg-gray-800 hover:text-foreground transition-colors w-full"
                   >
                     <LogOut className="h-4 w-4" />
                     Logout

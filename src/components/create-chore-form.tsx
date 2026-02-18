@@ -1,19 +1,21 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { createChore } from "@/lib/actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { toast } from "sonner";
 
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 export function CreateChoreForm() {
   const [frequency, setFrequency] = useState("one-off");
+  const formRef = useRef<HTMLFormElement>(null);
 
   return (
-    <form action={createChore} className="space-y-4">
+    <form ref={formRef} action={async (formData) => { await createChore(formData); formRef.current?.reset(); setFrequency("one-off"); toast.success("Chore created!"); }} className="space-y-4">
       <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-end gap-3 sm:gap-4">
         <div className="flex-1 min-w-0 sm:min-w-[200px]">
           <Label htmlFor="title">Title</Label>

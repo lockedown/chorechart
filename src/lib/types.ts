@@ -97,6 +97,15 @@ export interface Session {
   created_at: string;
 }
 
+export interface SavingsGoal {
+  id: string;
+  child_id: string;
+  title: string;
+  target_amount: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ChoreProposal {
   id: string;
   child_id: string;

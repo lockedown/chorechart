@@ -16,6 +16,7 @@ import type {
   User,
   ChoreProposal,
   ChoreProposalWithChild,
+  SavingsGoal,
 } from "@/lib/types";
 
 function uid() {
@@ -465,6 +466,106 @@ export async function getDashboardStats() {
   const pendingProposals = Number(proposalRow[0].cnt);
   const totalBalance = children.reduce((sum, c) => sum + c.balance, 0);
   return { children, pendingApprovals, totalChores, totalBalance, rewardCount, pendingProposals };
+}
+
+// ─── Savings Goals ─────────────────────────────────────────
+
+export async function getChildSavingsGoals(childId: string) {
+  await ensureDb();
+  const rows = await sql`SELECT * FROM savings_goals WHERE child_id = ${childId} ORDER BY created_at DESC`;
+  return rows.map(r => numify(r, "target_amount")) as SavingsGoal[];
+}
+
+export async function createSavingsGoal(formData: FormData) {
+  await ensureDb();
+  const id = uid();
+  const childId = formData.get("childId") as string;
+  const title = formData.get("title") as string;
+  const targetAmount = parseFloat(formData.get("targetAmount") as string) || 0;
+  await sql`INSERT INTO savings_goals (id, child_id, title, target_amount) VALUES (${id}, ${childId}, ${title}, ${targetAmount})`;
+  revalidatePath("/my");
+  revalidatePath(`/children/${childId}`);
+}
+
+export async function deleteSavingsGoal(goalId: string) {
+  await ensureDb();
+  const rows = await sql`SELECT child_id FROM savings_goals WHERE id = ${goalId}`;
+  await sql`DELETE FROM savings_goals WHERE id = ${goalId}`;
+  if (rows[0]) {
+    revalidatePath("/my");
+    revalidatePath(`/children/${rows[0].child_id}`);
+  }
+}
+
+// ─── Streak Tracker ────────────────────────────────────────
+
+export async function getChildStreak(childId: string): Promise<{ current: number; best: number }> {
+  await ensureDb();
+  // Get all assignments with due_date that are approved, ordered by date desc
+  const rows = await sql`
+    SELECT DISTINCT due_date FROM chore_assignments
+    WHERE child_id = ${childId} AND due_date IS NOT NULL
+    ORDER BY due_date DESC
+  `;
+
+  if (rows.length === 0) return { current: 0, best: 0 };
+
+  // For each date that has assignments, check if ALL assignments for that date are approved
+  const approvedDates: string[] = [];
+  for (const row of rows) {
+    const date = row.due_date as string;
+    const total = await sql`SELECT COUNT(*) AS cnt FROM chore_assignments WHERE child_id = ${childId} AND due_date = ${date}`;
+    const done = await sql`SELECT COUNT(*) AS cnt FROM chore_assignments WHERE child_id = ${childId} AND due_date = ${date} AND status = 'approved'`;
+    if (Number(total[0].cnt) > 0 && Number(total[0].cnt) === Number(done[0].cnt)) {
+      approvedDates.push(date);
+    }
+  }
+
+  if (approvedDates.length === 0) return { current: 0, best: 0 };
+
+  // Calculate current streak (consecutive days ending at today or yesterday)
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const yesterday = new Date(today);
+  yesterday.setDate(yesterday.getDate() - 1);
+
+  const dateSet = new Set(approvedDates);
+  let current = 0;
+  let checkDate = new Date(today);
+
+  // Start from today; if today has no approved chores, try yesterday
+  const todayStr = today.toISOString().split("T")[0];
+  const yesterdayStr = yesterday.toISOString().split("T")[0];
+  if (!dateSet.has(todayStr) && !dateSet.has(yesterdayStr)) {
+    // Streak is broken
+  } else {
+    if (!dateSet.has(todayStr)) {
+      checkDate = new Date(yesterday);
+    }
+    while (dateSet.has(checkDate.toISOString().split("T")[0])) {
+      current++;
+      checkDate.setDate(checkDate.getDate() - 1);
+    }
+  }
+
+  // Calculate best streak
+  const sorted = [...approvedDates].sort();
+  let best = 0;
+  let run = 1;
+  for (let i = 1; i < sorted.length; i++) {
+    const prev = new Date(sorted[i - 1]);
+    const curr = new Date(sorted[i]);
+    const diff = (curr.getTime() - prev.getTime()) / (1000 * 60 * 60 * 24);
+    if (diff === 1) {
+      run++;
+    } else {
+      best = Math.max(best, run);
+      run = 1;
+    }
+  }
+  best = Math.max(best, run);
+
+  return { current, best };
 }
 
 // ─── Chore Proposals (Barter System) ────────────────────────

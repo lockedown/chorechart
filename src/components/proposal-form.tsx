@@ -1,14 +1,17 @@
 "use client";
 
+import { useRef } from "react";
 import { createProposal } from "@/lib/actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { toast } from "sonner";
 
 export function ProposalForm({ childId }: { childId: string }) {
+  const formRef = useRef<HTMLFormElement>(null);
   return (
-    <form action={createProposal} className="space-y-4">
+    <form ref={formRef} action={async (formData) => { await createProposal(formData); formRef.current?.reset(); toast.success("Proposal submitted!"); }} className="space-y-4">
       <input type="hidden" name="childId" value={childId} />
       <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-end gap-3 sm:gap-4">
         <div className="flex-1 min-w-0 sm:min-w-[200px]">
