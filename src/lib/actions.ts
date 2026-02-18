@@ -483,6 +483,7 @@ export async function createProposal(formData: FormData) {
   const description = (formData.get("description") as string) || "";
   const requestedValue = parseFloat(formData.get("requestedValue") as string) || 0;
   await sql`INSERT INTO chore_proposals (id, child_id, title, description, requested_value) VALUES (${id}, ${childId}, ${title}, ${description}, ${requestedValue})`;
+  revalidatePath("/");
   revalidatePath("/my");
   revalidatePath("/approvals");
 }
@@ -499,6 +500,7 @@ export async function childAcceptCounter(proposalId: string) {
   await sql`INSERT INTO chores (id, title, description, value, frequency) VALUES (${choreId}, ${proposal.title}, ${proposal.description}, ${proposal.admin_value}, 'one-off')`;
   await sql`INSERT INTO chore_assignments (id, child_id, chore_id) VALUES (${assignmentId}, ${proposal.child_id}, ${choreId})`;
   await sql`UPDATE chore_proposals SET status = 'accepted', updated_at = NOW() WHERE id = ${proposalId}`;
+  revalidatePath("/");
   revalidatePath("/my");
   revalidatePath("/approvals");
   revalidatePath("/chores");
@@ -508,6 +510,7 @@ export async function childAcceptCounter(proposalId: string) {
 export async function childDeclineCounter(proposalId: string) {
   await ensureDb();
   await sql`UPDATE chore_proposals SET status = 'declined', updated_at = NOW() WHERE id = ${proposalId}`;
+  revalidatePath("/");
   revalidatePath("/my");
   revalidatePath("/approvals");
 }
@@ -524,6 +527,7 @@ export async function adminApproveProposal(proposalId: string) {
   await sql`INSERT INTO chores (id, title, description, value, frequency) VALUES (${choreId}, ${proposal.title}, ${proposal.description}, ${proposal.requested_value}, 'one-off')`;
   await sql`INSERT INTO chore_assignments (id, child_id, chore_id) VALUES (${assignmentId}, ${proposal.child_id}, ${choreId})`;
   await sql`UPDATE chore_proposals SET status = 'accepted', updated_at = NOW() WHERE id = ${proposalId}`;
+  revalidatePath("/");
   revalidatePath("/my");
   revalidatePath("/approvals");
   revalidatePath("/chores");
@@ -536,6 +540,7 @@ export async function adminCounterProposal(formData: FormData) {
   const adminValue = parseFloat(formData.get("adminValue") as string);
   if (!proposalId || isNaN(adminValue)) return;
   await sql`UPDATE chore_proposals SET admin_value = ${adminValue}, status = 'countered', updated_at = NOW() WHERE id = ${proposalId}`;
+  revalidatePath("/");
   revalidatePath("/my");
   revalidatePath("/approvals");
 }
@@ -543,6 +548,7 @@ export async function adminCounterProposal(formData: FormData) {
 export async function adminRejectProposal(proposalId: string) {
   await ensureDb();
   await sql`UPDATE chore_proposals SET status = 'rejected', updated_at = NOW() WHERE id = ${proposalId}`;
+  revalidatePath("/");
   revalidatePath("/my");
   revalidatePath("/approvals");
 }

@@ -29,8 +29,8 @@ export default async function DashboardPage() {
 
         {/* Stats cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Link href="/children">
-            <Card className="hover:shadow-md transition-shadow cursor-pointer">
+          <Link href="/children" className="h-full">
+            <Card className="hover:shadow-md transition-shadow cursor-pointer h-full">
               <CardHeader className="flex flex-row items-center justify-between pb-2">
                 <CardTitle className="text-sm font-medium text-muted-foreground">Children</CardTitle>
                 <Users className="h-4 w-4 text-violet-500" />
@@ -40,8 +40,8 @@ export default async function DashboardPage() {
               </CardContent>
             </Card>
           </Link>
-          <Link href="/approvals">
-            <Card className="hover:shadow-md transition-shadow cursor-pointer">
+          <Link href="/approvals" className="h-full">
+            <Card className="hover:shadow-md transition-shadow cursor-pointer h-full">
               <CardHeader className="flex flex-row items-center justify-between pb-2">
                 <CardTitle className="text-sm font-medium text-muted-foreground">Pending Approvals</CardTitle>
                 <ListChecks className="h-4 w-4 text-amber-500" />
@@ -56,7 +56,7 @@ export default async function DashboardPage() {
               </CardContent>
             </Card>
           </Link>
-          <Card>
+          <Card className="h-full">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">Total Balance</CardTitle>
               <Wallet className="h-4 w-4 text-green-500" />
@@ -65,8 +65,8 @@ export default async function DashboardPage() {
               <div className="text-2xl font-bold">£{stats.totalBalance.toFixed(2)}</div>
             </CardContent>
           </Card>
-          <Link href="/rewards">
-            <Card className="hover:shadow-md transition-shadow cursor-pointer">
+          <Link href="/rewards" className="h-full">
+            <Card className="hover:shadow-md transition-shadow cursor-pointer h-full">
               <CardHeader className="flex flex-row items-center justify-between pb-2">
                 <CardTitle className="text-sm font-medium text-muted-foreground">Rewards</CardTitle>
                 <Gift className="h-4 w-4 text-pink-500" />
