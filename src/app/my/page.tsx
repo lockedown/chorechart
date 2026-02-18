@@ -73,13 +73,15 @@ export default async function MyPage() {
         </div>
 
         <Tabs defaultValue="chores" className="space-y-6">
-          <TabsList>
-            <TabsTrigger value="chores">My Chores</TabsTrigger>
-            <TabsTrigger value="propose">Propose</TabsTrigger>
-            <TabsTrigger value="rewards">Rewards</TabsTrigger>
-            <TabsTrigger value="achievements">Badges</TabsTrigger>
-            <TabsTrigger value="history">History</TabsTrigger>
-          </TabsList>
+          <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+            <TabsList className="w-max sm:w-auto">
+              <TabsTrigger value="chores">My Chores</TabsTrigger>
+              <TabsTrigger value="propose">Propose</TabsTrigger>
+              <TabsTrigger value="rewards">Rewards</TabsTrigger>
+              <TabsTrigger value="achievements">Badges</TabsTrigger>
+              <TabsTrigger value="history">History</TabsTrigger>
+            </TabsList>
+          </div>
 
           {/* ─── Chores Tab ─── */}
           <TabsContent value="chores" className="space-y-6">

@@ -52,12 +52,14 @@ export default async function ChildDetailPage({ params }: { params: Promise<{ id
         </div>
 
         <Tabs defaultValue="chores" className="space-y-6">
-          <TabsList>
-            <TabsTrigger value="chores">Chores</TabsTrigger>
-            <TabsTrigger value="money">Pocket Money</TabsTrigger>
-            <TabsTrigger value="rewards">Rewards</TabsTrigger>
-            <TabsTrigger value="achievements">Badges</TabsTrigger>
-          </TabsList>
+          <div className="overflow-x-auto -mx-4 px-4 sm:mx-0 sm:px-0">
+            <TabsList className="w-max sm:w-auto">
+              <TabsTrigger value="chores">Chores</TabsTrigger>
+              <TabsTrigger value="money">Pocket Money</TabsTrigger>
+              <TabsTrigger value="rewards">Rewards</TabsTrigger>
+              <TabsTrigger value="achievements">Badges</TabsTrigger>
+            </TabsList>
+          </div>
 
           {/* ─── Chores Tab ─── */}
           <TabsContent value="chores" className="space-y-6">
