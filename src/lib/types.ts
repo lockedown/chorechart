@@ -121,3 +121,14 @@ export interface ChoreProposal {
 export interface ChoreProposalWithChild extends ChoreProposal {
   child_name: string;
 }
+
+export interface AchievementDef {
+  id: string;
+  title: string;
+  description: string;
+  icon: string;
+}
+
+export interface UnlockedAchievement extends AchievementDef {
+  unlocked_at: string;
+}

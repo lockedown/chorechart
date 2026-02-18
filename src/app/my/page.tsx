@@ -1,13 +1,13 @@
 import { getSession } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { getChild, getRewards, markChoreDone, claimReward, getChildProposals, childAcceptCounter, childDeclineCounter, getChildStreak, getChildSavingsGoals, deleteSavingsGoal } from "@/lib/actions";
+import { getChild, getRewards, markChoreDone, claimReward, getChildProposals, childAcceptCounter, childDeclineCounter, getChildStreak, getChildSavingsGoals, deleteSavingsGoal, getChildAchievements, getAllAchievements } from "@/lib/actions";
 import { Nav } from "@/components/nav";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { CheckCircle, Clock, Award, Gift, Plus, Minus, Lightbulb, Flame, Trophy, Target, Trash2 } from "lucide-react";
+import { CheckCircle, Clock, Award, Gift, Plus, Minus, Lightbulb, Flame, Trophy, Target, Trash2, Medal } from "lucide-react";
 import { ProposalForm } from "@/components/proposal-form";
 import { ToastButton } from "@/components/toast-button";
 import { SavingsGoalForm } from "@/components/savings-goal-form";
@@ -18,13 +18,16 @@ export default async function MyPage() {
   if (session.user.role === "admin") redirect("/");
   if (!session.user.child_id) redirect("/login");
 
-  const [child, rewards, proposals, streak, savingsGoals] = await Promise.all([
+  const [child, rewards, proposals, streak, savingsGoals, achievements] = await Promise.all([
     getChild(session.user.child_id),
     getRewards(),
     getChildProposals(session.user.child_id),
     getChildStreak(session.user.child_id),
     getChildSavingsGoals(session.user.child_id),
+    getChildAchievements(session.user.child_id),
   ]);
+  const allAchievements = getAllAchievements();
+  const unlockedIds = new Set(achievements.map(a => a.id));
 
   if (!child) redirect("/login");
 
@@ -74,6 +77,7 @@ export default async function MyPage() {
             <TabsTrigger value="chores">My Chores</TabsTrigger>
             <TabsTrigger value="propose">Propose</TabsTrigger>
             <TabsTrigger value="rewards">Rewards</TabsTrigger>
+            <TabsTrigger value="achievements">Badges</TabsTrigger>
             <TabsTrigger value="history">History</TabsTrigger>
           </TabsList>
 
@@ -335,6 +339,35 @@ export default async function MyPage() {
                   ))}
                 </div>
               )}
+            </div>
+          </TabsContent>
+
+          {/* ─── Achievements Tab ─── */}
+          <TabsContent value="achievements" className="space-y-6">
+            <div>
+              <h3 className="font-semibold mb-1 flex items-center gap-2">
+                <Medal className="h-4 w-4 text-amber-500" /> Achievements
+              </h3>
+              <p className="text-sm text-muted-foreground mb-4">{achievements.length} of {allAchievements.length} unlocked</p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {allAchievements.map((a) => {
+                  const unlocked = unlockedIds.has(a.id);
+                  return (
+                    <Card key={a.id} className={unlocked ? "border-amber-300 dark:border-amber-700 bg-amber-50/50 dark:bg-amber-950/30" : "opacity-40 grayscale"}>
+                      <CardContent className="py-4 text-center">
+                        <div className="text-3xl mb-2">{a.icon}</div>
+                        <p className="font-semibold text-sm">{a.title}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">{a.description}</p>
+                        {unlocked && (
+                          <Badge variant="secondary" className="mt-2 bg-amber-100 dark:bg-amber-900 text-amber-700 dark:text-amber-300 text-xs">
+                            Unlocked
+                          </Badge>
+                        )}
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
             </div>
           </TabsContent>
 

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getChild, getChores, getRewards, addTransaction, claimReward, markChoreDone, approveChore } from "@/lib/actions";
+import { getChild, getChores, getRewards, addTransaction, claimReward, markChoreDone, approveChore, getChildAchievements, getAllAchievements } from "@/lib/actions";
 import { requireAdmin } from "@/lib/auth";
 import { Nav } from "@/components/nav";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,17 +10,20 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { CheckCircle, Clock, Award, ArrowLeft, Plus, Minus, Gift } from "lucide-react";
+import { CheckCircle, Clock, Award, ArrowLeft, Plus, Minus, Gift, Medal } from "lucide-react";
 import { AssignChoreForm } from "@/components/assign-chore-form";
 
 export default async function ChildDetailPage({ params }: { params: Promise<{ id: string }> }) {
   await requireAdmin();
   const { id } = await params;
-  const [child, chores, rewards] = await Promise.all([
+  const [child, chores, rewards, achievements] = await Promise.all([
     getChild(id),
     getChores(),
     getRewards(),
+    getChildAchievements(id),
   ]);
+  const allAchievements = getAllAchievements();
+  const unlockedIds = new Set(achievements.map(a => a.id));
 
   if (!child) notFound();
 
@@ -53,6 +56,7 @@ export default async function ChildDetailPage({ params }: { params: Promise<{ id
             <TabsTrigger value="chores">Chores</TabsTrigger>
             <TabsTrigger value="money">Pocket Money</TabsTrigger>
             <TabsTrigger value="rewards">Rewards</TabsTrigger>
+            <TabsTrigger value="achievements">Badges</TabsTrigger>
           </TabsList>
 
           {/* ─── Chores Tab ─── */}
@@ -279,6 +283,34 @@ export default async function ChildDetailPage({ params }: { params: Promise<{ id
                   ))}
                 </div>
               )}
+            </div>
+          </TabsContent>
+          {/* ─── Achievements Tab ─── */}
+          <TabsContent value="achievements" className="space-y-6">
+            <div>
+              <h3 className="font-semibold mb-1 flex items-center gap-2">
+                <Medal className="h-4 w-4 text-amber-500" /> Achievements
+              </h3>
+              <p className="text-sm text-muted-foreground mb-4">{achievements.length} of {allAchievements.length} unlocked</p>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                {allAchievements.map((a) => {
+                  const unlocked = unlockedIds.has(a.id);
+                  return (
+                    <Card key={a.id} className={unlocked ? "border-amber-300 dark:border-amber-700 bg-amber-50/50 dark:bg-amber-950/30" : "opacity-40 grayscale"}>
+                      <CardContent className="py-4 text-center">
+                        <div className="text-3xl mb-2">{a.icon}</div>
+                        <p className="font-semibold text-sm">{a.title}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">{a.description}</p>
+                        {unlocked && (
+                          <Badge variant="secondary" className="mt-2 bg-amber-100 dark:bg-amber-900 text-amber-700 dark:text-amber-300 text-xs">
+                            Unlocked
+                          </Badge>
+                        )}
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </div>
             </div>
           </TabsContent>
         </Tabs>
