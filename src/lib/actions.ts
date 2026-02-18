@@ -609,21 +609,20 @@ export function getAllAchievements(): AchievementDef[] {
 
 export async function getChildAchievements(childId: string): Promise<UnlockedAchievement[]> {
   await ensureDb();
-  const [approvedRow, claimsRow, proposalsRow, earningsRow, streakData] = await Promise.all([
-    sql`SELECT COUNT(*) AS cnt FROM chore_assignments WHERE child_id = ${childId} AND status = 'approved'`,
+  const [doneRow, claimsRow, proposalsRow, earningsRow, streakData] = await Promise.all([
+    sql`SELECT COUNT(*) AS cnt FROM chore_assignments WHERE child_id = ${childId} AND status IN ('completed', 'approved')`,
     sql`SELECT COUNT(*) AS cnt FROM reward_claims WHERE child_id = ${childId}`,
     sql`SELECT COUNT(*) AS cnt FROM chore_proposals WHERE child_id = ${childId}`,
     sql`SELECT COALESCE(SUM(amount), 0) AS total FROM transactions WHERE child_id = ${childId} AND amount > 0`,
     getChildStreak(childId),
   ]);
 
-  const approvedCount = Number(approvedRow[0].cnt);
+  const doneCount = Number(doneRow[0].cnt);
   const claimCount = Number(claimsRow[0].cnt);
   const proposalCount = Number(proposalsRow[0].cnt);
   const totalEarnings = Number(earningsRow[0].total);
   const bestStreak = streakData.best;
 
-  // Get earliest timestamps for unlock dates
   const unlocked: UnlockedAchievement[] = [];
 
   const check = (id: string, condition: boolean) => {
@@ -633,11 +632,11 @@ export async function getChildAchievements(childId: string): Promise<UnlockedAch
     }
   };
 
-  check("first_chore", approvedCount >= 1);
-  check("chores_10", approvedCount >= 10);
-  check("chores_25", approvedCount >= 25);
-  check("chores_50", approvedCount >= 50);
-  check("chores_100", approvedCount >= 100);
+  check("first_chore", doneCount >= 1);
+  check("chores_10", doneCount >= 10);
+  check("chores_25", doneCount >= 25);
+  check("chores_50", doneCount >= 50);
+  check("chores_100", doneCount >= 100);
   check("first_reward", claimCount >= 1);
   check("first_proposal", proposalCount >= 1);
   check("earnings_10", totalEarnings >= 10);
