@@ -603,7 +603,7 @@ const ACHIEVEMENTS: AchievementDef[] = [
   { id: "streak_7", title: "Week Warrior", description: "Achieved a 7-day streak", icon: "⚡" },
 ];
 
-export function getAllAchievements(): AchievementDef[] {
+export async function getAllAchievements(): Promise<AchievementDef[]> {
   return ACHIEVEMENTS;
 }
 

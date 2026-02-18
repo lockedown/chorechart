@@ -26,7 +26,7 @@ export default async function MyPage() {
     getChildSavingsGoals(session.user.child_id),
     getChildAchievements(session.user.child_id),
   ]);
-  const allAchievements = getAllAchievements();
+  const allAchievements = await getAllAchievements();
   const unlockedIds = new Set(achievements.map(a => a.id));
 
   if (!child) redirect("/login");

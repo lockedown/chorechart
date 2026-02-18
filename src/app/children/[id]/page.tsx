@@ -22,7 +22,7 @@ export default async function ChildDetailPage({ params }: { params: Promise<{ id
     getRewards(),
     getChildAchievements(id),
   ]);
-  const allAchievements = getAllAchievements();
+  const allAchievements = await getAllAchievements();
   const unlockedIds = new Set(achievements.map(a => a.id));
 
   if (!child) notFound();
