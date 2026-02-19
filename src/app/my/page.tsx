@@ -1,16 +1,17 @@
 import { getSession } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { getChild, getRewards, markChoreDone, claimReward, getChildProposals, childAcceptCounter, childDeclineCounter, getChildStreak, getChildSavingsGoals, deleteSavingsGoal, getChildAchievements, getAllAchievements, processAllowances } from "@/lib/actions";
+import { getChild, getRewards, markChoreDone, claimReward, getChildProposals, childAcceptCounter, childDeclineCounter, getChildStreak, getChildSavingsGoals, deleteSavingsGoal, getChildAchievements, getAllAchievements, processAllowances, getChildCashOutRequests } from "@/lib/actions";
 import { Nav } from "@/components/nav";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { CheckCircle, Clock, Award, Gift, Plus, Minus, Lightbulb, Flame, Trophy, Target, Trash2, Medal } from "lucide-react";
+import { CheckCircle, Clock, Award, Gift, Plus, Minus, Lightbulb, Flame, Trophy, Target, Trash2, Medal, Banknote } from "lucide-react";
 import { ProposalForm } from "@/components/proposal-form";
 import { ToastButton } from "@/components/toast-button";
 import { SavingsGoalForm } from "@/components/savings-goal-form";
+import { CashOutForm } from "@/components/cash-out-form";
 
 export default async function MyPage() {
   const session = await getSession();
@@ -20,13 +21,14 @@ export default async function MyPage() {
 
   await processAllowances();
 
-  const [child, rewards, proposals, streak, savingsGoals, achievements] = await Promise.all([
+  const [child, rewards, proposals, streak, savingsGoals, achievements, cashOutRequests] = await Promise.all([
     getChild(session.user.child_id),
     getRewards(),
     getChildProposals(session.user.child_id),
     getChildStreak(session.user.child_id),
     getChildSavingsGoals(session.user.child_id),
     getChildAchievements(session.user.child_id),
+    getChildCashOutRequests(session.user.child_id),
   ]);
   const allAchievements = await getAllAchievements();
   const unlockedIds = new Set(achievements.map(a => a.id));
@@ -324,6 +326,35 @@ export default async function MyPage() {
                 })}
               </div>
             )}
+
+            <Separator />
+
+            {/* Cash Out */}
+            <div>
+              <h3 className="font-semibold mb-3 flex items-center gap-2">
+                <Banknote className="h-4 w-4 text-green-500" /> Cash Out to Bank
+              </h3>
+              <p className="text-sm text-muted-foreground mb-3">Request money to be transferred to your real bank account.</p>
+              <CashOutForm childId={child.id} balance={child.balance} />
+              {cashOutRequests.length > 0 && (
+                <div className="mt-4 space-y-2">
+                  <p className="text-sm font-medium text-muted-foreground">Recent requests</p>
+                  {cashOutRequests.slice(0, 5).map((req) => (
+                    <Card key={req.id} className={req.status === "pending" ? "border-amber-200" : "opacity-60"}>
+                      <CardContent className="flex items-center justify-between py-3">
+                        <div>
+                          <p className="font-medium text-sm">£{req.amount.toFixed(2)}</p>
+                          <p className="text-xs text-muted-foreground">{new Date(req.created_at).toLocaleDateString()}</p>
+                        </div>
+                        {req.status === "pending" && <Badge variant="secondary" className="bg-amber-100 text-amber-700">Pending</Badge>}
+                        {req.status === "approved" && <Badge variant="secondary" className="bg-green-100 text-green-700">Transferred</Badge>}
+                        {req.status === "rejected" && <Badge variant="secondary" className="bg-red-100 text-red-700">Rejected (refunded)</Badge>}
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </div>
 
             <Separator />
 

@@ -5,6 +5,7 @@ export interface Child {
   balance: number;
   allowance_amount: number;
   allowance_frequency: string;
+  allowance_start_date: string | null;
   last_allowance_date: string | null;
   created_at: string;
   updated_at: string;
@@ -123,6 +124,20 @@ export interface ChoreProposal {
 
 export interface ChoreProposalWithChild extends ChoreProposal {
   child_name: string;
+}
+
+export interface CashOutRequest {
+  id: string;
+  child_id: string;
+  amount: number;
+  status: string;
+  created_at: string;
+  resolved_at: string | null;
+}
+
+export interface CashOutRequestWithChild extends CashOutRequest {
+  child_name: string;
+  child_avatar: string;
 }
 
 export interface AchievementDef {

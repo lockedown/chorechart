@@ -19,6 +19,8 @@ import type {
   SavingsGoal,
   AchievementDef,
   UnlockedAchievement,
+  CashOutRequest,
+  CashOutRequestWithChild,
 } from "@/lib/types";
 
 function uid() {
@@ -308,6 +310,73 @@ export async function claimReward(childId: string, rewardId: string) {
   revalidatePath("/rewards");
 }
 
+// ─── Cash-Out Requests ───────────────────────────────────────
+
+export async function requestCashOut(childId: string, amount: number) {
+  await ensureDb();
+  const rows = await sql`SELECT * FROM children WHERE id = ${childId}`;
+  const child = rows[0] ? numify(rows[0], "balance", "allowance_amount") as Child : undefined;
+  if (!child || amount <= 0 || child.balance < amount) return;
+
+  const reqId = uid();
+  const txnId = uid();
+  const negAmount = -amount;
+  const desc = `Cash-out request: £${amount.toFixed(2)}`;
+
+  await sql`INSERT INTO cash_out_requests (id, child_id, amount) VALUES (${reqId}, ${childId}, ${amount})`;
+  await sql`UPDATE children SET balance = balance - ${amount}, updated_at = NOW() WHERE id = ${childId}`;
+  await sql`INSERT INTO transactions (id, child_id, amount, "type", description) VALUES (${txnId}, ${childId}, ${negAmount}, 'cash_out', ${desc})`;
+
+  revalidatePath("/");
+  revalidatePath(`/children/${childId}`);
+  revalidatePath("/my");
+  revalidatePath("/approvals");
+}
+
+export async function getChildCashOutRequests(childId: string): Promise<CashOutRequest[]> {
+  await ensureDb();
+  const rows = await sql`SELECT * FROM cash_out_requests WHERE child_id = ${childId} ORDER BY created_at DESC`;
+  return rows.map(r => numify(r, "amount")) as CashOutRequest[];
+}
+
+export async function getPendingCashOuts(): Promise<CashOutRequestWithChild[]> {
+  await ensureDb();
+  const rows = await sql`
+    SELECT co.*, ch.name AS child_name, ch.avatar AS child_avatar
+    FROM cash_out_requests co
+    JOIN children ch ON co.child_id = ch.id
+    WHERE co.status = 'pending'
+    ORDER BY co.created_at DESC
+  `;
+  return rows.map(r => numify(r, "amount")) as CashOutRequestWithChild[];
+}
+
+export async function approveCashOut(requestId: string) {
+  await ensureDb();
+  await sql`UPDATE cash_out_requests SET status = 'approved', resolved_at = NOW() WHERE id = ${requestId}`;
+  revalidatePath("/approvals");
+  revalidatePath("/my");
+}
+
+export async function rejectCashOut(requestId: string) {
+  await ensureDb();
+  const rows = await sql`SELECT * FROM cash_out_requests WHERE id = ${requestId} AND status = 'pending'`;
+  const req = rows[0] ? numify(rows[0], "amount") as CashOutRequest : undefined;
+  if (!req) return;
+
+  const txnId = uid();
+  const desc = `Cash-out rejected: £${req.amount.toFixed(2)} refunded`;
+
+  await sql`UPDATE cash_out_requests SET status = 'rejected', resolved_at = NOW() WHERE id = ${requestId}`;
+  await sql`UPDATE children SET balance = balance + ${req.amount}, updated_at = NOW() WHERE id = ${req.child_id}`;
+  await sql`INSERT INTO transactions (id, child_id, amount, "type", description) VALUES (${txnId}, ${req.child_id}, ${req.amount}, 'refund', ${desc})`;
+
+  revalidatePath("/");
+  revalidatePath(`/children/${req.child_id}`);
+  revalidatePath("/my");
+  revalidatePath("/approvals");
+}
+
 // ─── Admin ──────────────────────────────────────────────────
 
 export async function adminResetAllBalances() {
@@ -471,13 +540,21 @@ export async function adminNukeDatabase() {
 
 // ─── Recurring Allowance ─────────────────────────────────────
 
-export async function updateAllowance(childId: string, amount: number, frequency: string) {
+export async function updateAllowance(childId: string, amount: number, frequency: string, startDate: string) {
   await ensureDb();
-  await sql`
-    UPDATE children
-    SET allowance_amount = ${amount}, allowance_frequency = ${frequency}, updated_at = NOW()
-    WHERE id = ${childId}
-  `;
+  if (frequency === "none") {
+    await sql`
+      UPDATE children
+      SET allowance_amount = 0, allowance_frequency = 'none', allowance_start_date = NULL, last_allowance_date = NULL, updated_at = NOW()
+      WHERE id = ${childId}
+    `;
+  } else {
+    await sql`
+      UPDATE children
+      SET allowance_amount = ${amount}, allowance_frequency = ${frequency}, allowance_start_date = ${startDate}, last_allowance_date = ${startDate}, updated_at = NOW()
+      WHERE id = ${childId}
+    `;
+  }
   revalidatePath("/");
   revalidatePath(`/children/${childId}`);
   revalidatePath("/children");
@@ -494,10 +571,14 @@ export async function processAllowances() {
   const todayStr = today.toISOString().split("T")[0];
 
   for (const child of children) {
+    // Skip if start date is in the future
+    if (child.allowance_start_date && child.allowance_start_date > todayStr) continue;
+
     const lastDate = child.last_allowance_date;
     let depositCount = 0;
 
     if (!lastDate) {
+      // Legacy: no last_allowance_date set, use start date or deposit once
       depositCount = 1;
     } else {
       const last = new Date(lastDate);

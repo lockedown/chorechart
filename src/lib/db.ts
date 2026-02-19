@@ -147,6 +147,17 @@ export async function ensureDb() {
     sql`ALTER TABLE children ADD COLUMN IF NOT EXISTS allowance_amount NUMERIC NOT NULL DEFAULT 0`,
     sql`ALTER TABLE children ADD COLUMN IF NOT EXISTS allowance_frequency TEXT NOT NULL DEFAULT 'none'`,
     sql`ALTER TABLE children ADD COLUMN IF NOT EXISTS last_allowance_date TEXT`,
+    sql`ALTER TABLE children ADD COLUMN IF NOT EXISTS allowance_start_date TEXT`,
+    sql`
+      CREATE TABLE IF NOT EXISTS cash_out_requests (
+        id TEXT PRIMARY KEY,
+        child_id TEXT NOT NULL REFERENCES children(id) ON DELETE CASCADE,
+        amount NUMERIC NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        resolved_at TIMESTAMPTZ
+      )
+    `,
   ]);
 
   // Seed admin user
