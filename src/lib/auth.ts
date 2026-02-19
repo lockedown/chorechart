@@ -36,6 +36,18 @@ export async function getSession(): Promise<{ user: User } | null> {
   const user = users[0];
   if (!user) return null;
 
+  if (user.role === "child") {
+    if (!user.child_id) {
+      await sql`DELETE FROM sessions WHERE id = ${session.id}`;
+      return null;
+    }
+    const childRows = await sql`SELECT id FROM children WHERE id = ${user.child_id} LIMIT 1`;
+    if (childRows.length === 0) {
+      await sql`DELETE FROM sessions WHERE id = ${session.id}`;
+      return null;
+    }
+  }
+
   return { user };
 }
 
@@ -47,7 +59,7 @@ export async function requireAuth(): Promise<User> {
 
 export async function requireAdmin(): Promise<User> {
   const user = await requireAuth();
-  if (user.role !== "admin") redirect("/");
+  if (user.role !== "admin") redirect("/my");
   return user;
 }
 

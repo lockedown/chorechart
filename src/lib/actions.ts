@@ -259,26 +259,34 @@ export async function markChoreDone(assignmentId: string) {
 export async function approveChore(assignmentId: string) {
   if (!(await isAdminAction())) return;
   await ensureDb();
-  const rows = await sql`
-    SELECT ca.child_id, ca.status, c.value AS chore_value, c.title AS chore_title
-    FROM chore_assignments ca JOIN chores c ON ca.chore_id = c.id
-    WHERE ca.id = ${assignmentId}
-  `;
-  const assignment = rows[0] ? numify(rows[0], "chore_value") as { child_id: string; status: string; chore_value: number; chore_title: string } : undefined;
-  if (!assignment || assignment.status !== "completed") return;
-
-  const updated = await sql`
-    UPDATE chore_assignments
-    SET status = 'approved', approved_at = NOW(), updated_at = NOW()
-    WHERE id = ${assignmentId} AND status = 'completed'
-    RETURNING id
-  `;
-  if (updated.length === 0) return;
-
   const txnId = uid();
-  await sql`UPDATE children SET balance = balance + ${assignment.chore_value}, updated_at = NOW() WHERE id = ${assignment.child_id}`;
-  const desc = `Completed: ${assignment.chore_title}`;
-  await sql`INSERT INTO transactions (id, child_id, amount, "type", description) VALUES (${txnId}, ${assignment.child_id}, ${assignment.chore_value}, 'earn', ${desc})`;
+  const rows = await sql`
+    WITH updated AS (
+      UPDATE chore_assignments ca
+      SET status = 'approved', approved_at = NOW(), updated_at = NOW()
+      FROM chores c
+      WHERE ca.id = ${assignmentId}
+        AND ca.status = 'completed'
+        AND c.id = ca.chore_id
+      RETURNING ca.child_id, c.value AS chore_value, c.title AS chore_title
+    ),
+    credited AS (
+      UPDATE children ch
+      SET balance = ch.balance + u.chore_value, updated_at = NOW()
+      FROM updated u
+      WHERE ch.id = u.child_id
+      RETURNING ch.id
+    ),
+    logged AS (
+      INSERT INTO transactions (id, child_id, amount, "type", description)
+      SELECT ${txnId}, u.child_id, u.chore_value, 'earn', 'Completed: ' || u.chore_title
+      FROM updated u
+      RETURNING id
+    )
+    SELECT child_id FROM updated
+  `;
+  const assignment = rows[0] as { child_id: string } | undefined;
+  if (!assignment) return;
 
   revalidatePath("/");
   revalidatePath("/chores");
@@ -299,8 +307,22 @@ export async function addTransaction(formData: FormData) {
 
   const balanceChange = type === "deduction" || type === "spend" ? -Math.abs(amount) : Math.abs(amount);
 
-  await sql`INSERT INTO transactions (id, child_id, amount, "type", description) VALUES (${id}, ${childId}, ${balanceChange}, ${type}, ${description})`;
-  await sql`UPDATE children SET balance = balance + ${balanceChange}, updated_at = NOW() WHERE id = ${childId}`;
+  const applied = await sql`
+    WITH updated AS (
+      UPDATE children
+      SET balance = balance + ${balanceChange}, updated_at = NOW()
+      WHERE id = ${childId}
+      RETURNING id
+    ),
+    logged AS (
+      INSERT INTO transactions (id, child_id, amount, "type", description)
+      SELECT ${id}, ${childId}, ${balanceChange}, ${type}, ${description}
+      FROM updated
+      RETURNING id
+    )
+    SELECT id FROM updated
+  `;
+  if (applied.length === 0) return;
 
   revalidatePath("/");
   revalidatePath(`/children/${childId}`);
@@ -356,16 +378,28 @@ export async function claimReward(childId: string, rewardId: string) {
   const negCost = -reward.cost;
   const desc = `Claimed reward: ${reward.title}`;
 
-  const debited = await sql`
-    UPDATE children
-    SET balance = balance - ${reward.cost}, updated_at = NOW()
-    WHERE id = ${targetChildId} AND balance >= ${reward.cost}
-    RETURNING id
+  const applied = await sql`
+    WITH debited AS (
+      UPDATE children
+      SET balance = balance - ${reward.cost}, updated_at = NOW()
+      WHERE id = ${targetChildId} AND balance >= ${reward.cost}
+      RETURNING id
+    ),
+    claimed AS (
+      INSERT INTO reward_claims (id, child_id, reward_id)
+      SELECT ${claimId}, ${targetChildId}, ${rewardId}
+      FROM debited
+      RETURNING id
+    ),
+    logged AS (
+      INSERT INTO transactions (id, child_id, amount, "type", description)
+      SELECT ${txnId}, ${targetChildId}, ${negCost}, 'spend', ${desc}
+      FROM debited
+      RETURNING id
+    )
+    SELECT id FROM debited
   `;
-  if (debited.length === 0) return;
-
-  await sql`INSERT INTO reward_claims (id, child_id, reward_id) VALUES (${claimId}, ${targetChildId}, ${rewardId})`;
-  await sql`INSERT INTO transactions (id, child_id, amount, "type", description) VALUES (${txnId}, ${targetChildId}, ${negCost}, 'spend', ${desc})`;
+  if (applied.length === 0) return;
 
   revalidatePath("/");
   revalidatePath(`/children/${targetChildId}`);
@@ -386,16 +420,28 @@ export async function requestCashOut(childId: string, amount: number) {
   const negAmount = -amount;
   const desc = `Cash-out request: £${amount.toFixed(2)}`;
 
-  const debited = await sql`
-    UPDATE children
-    SET balance = balance - ${amount}, updated_at = NOW()
-    WHERE id = ${targetChildId} AND balance >= ${amount}
-    RETURNING id
+  const applied = await sql`
+    WITH debited AS (
+      UPDATE children
+      SET balance = balance - ${amount}, updated_at = NOW()
+      WHERE id = ${targetChildId} AND balance >= ${amount}
+      RETURNING id
+    ),
+    requested AS (
+      INSERT INTO cash_out_requests (id, child_id, amount)
+      SELECT ${reqId}, ${targetChildId}, ${amount}
+      FROM debited
+      RETURNING id
+    ),
+    logged AS (
+      INSERT INTO transactions (id, child_id, amount, "type", description)
+      SELECT ${txnId}, ${targetChildId}, ${negAmount}, 'cash_out', ${desc}
+      FROM debited
+      RETURNING id
+    )
+    SELECT id FROM debited
   `;
-  if (debited.length === 0) return;
-
-  await sql`INSERT INTO cash_out_requests (id, child_id, amount) VALUES (${reqId}, ${targetChildId}, ${amount})`;
-  await sql`INSERT INTO transactions (id, child_id, amount, "type", description) VALUES (${txnId}, ${targetChildId}, ${negAmount}, 'cash_out', ${desc})`;
+  if (applied.length === 0) return;
 
   revalidatePath("/");
   revalidatePath(`/children/${targetChildId}`);
@@ -434,20 +480,36 @@ export async function approveCashOut(requestId: string) {
 export async function rejectCashOut(requestId: string) {
   if (!(await isAdminAction())) return;
   await ensureDb();
+  const txnId = uid();
   const rows = await sql`
-    UPDATE cash_out_requests
-    SET status = 'rejected', resolved_at = NOW()
-    WHERE id = ${requestId} AND status = 'pending'
-    RETURNING child_id, amount
+    WITH rejected AS (
+      UPDATE cash_out_requests
+      SET status = 'rejected', resolved_at = NOW()
+      WHERE id = ${requestId} AND status = 'pending'
+      RETURNING child_id, amount
+    ),
+    refunded AS (
+      UPDATE children c
+      SET balance = c.balance + r.amount, updated_at = NOW()
+      FROM rejected r
+      WHERE c.id = r.child_id
+      RETURNING c.id
+    ),
+    logged AS (
+      INSERT INTO transactions (id, child_id, amount, "type", description)
+      SELECT
+        ${txnId},
+        r.child_id,
+        r.amount,
+        'refund',
+        'Cash-out rejected: £' || TO_CHAR(r.amount::numeric, 'FM999999990.00') || ' refunded'
+      FROM rejected r
+      RETURNING id
+    )
+    SELECT child_id, amount FROM rejected
   `;
   const req = rows[0] ? numify(rows[0], "amount") as Pick<CashOutRequest, "child_id" | "amount"> : undefined;
   if (!req) return;
-
-  const txnId = uid();
-  const desc = `Cash-out rejected: £${req.amount.toFixed(2)} refunded`;
-
-  await sql`UPDATE children SET balance = balance + ${req.amount}, updated_at = NOW() WHERE id = ${req.child_id}`;
-  await sql`INSERT INTO transactions (id, child_id, amount, "type", description) VALUES (${txnId}, ${req.child_id}, ${req.amount}, 'refund', ${desc})`;
 
   revalidatePath("/");
   revalidatePath(`/children/${req.child_id}`);
@@ -666,28 +728,32 @@ export async function processAllowances() {
     // Skip if start date is in the future
     if (child.allowance_start_date && child.allowance_start_date > todayStr) continue;
 
-    const lastDate = child.last_allowance_date;
+    const lastDate = child.last_allowance_date ?? child.allowance_start_date ?? todayStr;
     let depositCount = 0;
 
-    if (!lastDate) {
-      // Legacy: no last_allowance_date set, use start date or deposit once
-      depositCount = 1;
-    } else {
-      const last = new Date(lastDate);
-      last.setHours(0, 0, 0, 0);
-      const diffMs = today.getTime() - last.getTime();
-      const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    const last = new Date(lastDate);
+    last.setHours(0, 0, 0, 0);
+    const diffMs = today.getTime() - last.getTime();
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
 
-      if (child.allowance_frequency === "weekly") {
-        depositCount = Math.floor(diffDays / 7);
-      } else if (child.allowance_frequency === "monthly") {
-        let months = (today.getFullYear() - last.getFullYear()) * 12 + (today.getMonth() - last.getMonth());
-        if (today.getDate() < last.getDate()) months--;
-        depositCount = Math.max(0, months);
-      }
+    if (child.allowance_frequency === "weekly") {
+      depositCount = Math.floor(diffDays / 7);
+    } else if (child.allowance_frequency === "monthly") {
+      let months = (today.getFullYear() - last.getFullYear()) * 12 + (today.getMonth() - last.getMonth());
+      if (today.getDate() < last.getDate()) months--;
+      depositCount = Math.max(0, months);
     }
 
-    if (depositCount <= 0) continue;
+    if (depositCount <= 0) {
+      if (!child.last_allowance_date) {
+        await sql`
+          UPDATE children
+          SET last_allowance_date = ${lastDate}, updated_at = NOW()
+          WHERE id = ${child.id} AND last_allowance_date IS NULL
+        `;
+      }
+      continue;
+    }
 
     const totalDeposit = child.allowance_amount * depositCount;
     const txnId = uid();
@@ -696,8 +762,20 @@ export async function processAllowances() {
       ? `Allowance (${label}ly)`
       : `Allowance: ${depositCount} ${label}s`;
 
-    await sql`UPDATE children SET balance = balance + ${totalDeposit}, last_allowance_date = ${todayStr}, updated_at = NOW() WHERE id = ${child.id}`;
-    await sql`INSERT INTO transactions (id, child_id, amount, "type", description) VALUES (${txnId}, ${child.id}, ${totalDeposit}, 'allowance', ${desc})`;
+    await sql`
+      WITH updated AS (
+        UPDATE children
+        SET balance = balance + ${totalDeposit}, last_allowance_date = ${todayStr}, updated_at = NOW()
+        WHERE id = ${child.id}
+          AND last_allowance_date IS NOT DISTINCT FROM ${child.last_allowance_date}
+          AND allowance_amount = ${child.allowance_amount}
+          AND allowance_frequency = ${child.allowance_frequency}
+        RETURNING id
+      )
+      INSERT INTO transactions (id, child_id, amount, "type", description)
+      SELECT ${txnId}, ${child.id}, ${totalDeposit}, 'allowance', ${desc}
+      FROM updated
+    `;
   }
 }
 
