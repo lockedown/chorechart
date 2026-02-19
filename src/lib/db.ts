@@ -18,14 +18,15 @@ export function numify<T extends Record<string, unknown>>(row: T, ...keys: strin
 }
 
 let _initialized = false;
+let _initializing: Promise<void> | null = null;
 
 export async function ensureDb() {
   if (_initialized) return;
-  _initialized = true;
+  if (_initializing) return _initializing;
 
-  // Phase 1: independent base tables (no FK deps) — run in parallel
-  await Promise.all([
-    sql`
+  _initializing = (async () => {
+    // Use sequential schema checks to avoid bursty parallel connections.
+    await sql`
       CREATE TABLE IF NOT EXISTS children (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
@@ -34,8 +35,9 @@ export async function ensureDb() {
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
-    `,
-    sql`
+    `;
+
+    await sql`
       CREATE TABLE IF NOT EXISTS chores (
         id TEXT PRIMARY KEY,
         title TEXT NOT NULL,
@@ -46,8 +48,9 @@ export async function ensureDb() {
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
-    `,
-    sql`
+    `;
+
+    await sql`
       CREATE TABLE IF NOT EXISTS rewards (
         id TEXT PRIMARY KEY,
         title TEXT NOT NULL,
@@ -57,12 +60,21 @@ export async function ensureDb() {
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
-    `,
-  ]);
+    `;
 
-  // Phase 2: dependent tables (FK → children, chores, rewards, users) — run in parallel
-  await Promise.all([
-    sql`
+    await sql`
+      CREATE TABLE IF NOT EXISTS users (
+        id TEXT PRIMARY KEY,
+        username TEXT NOT NULL UNIQUE,
+        password_hash TEXT NOT NULL,
+        role TEXT NOT NULL DEFAULT 'child',
+        child_id TEXT REFERENCES children(id) ON DELETE CASCADE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `;
+
+    await sql`
       CREATE TABLE IF NOT EXISTS chore_assignments (
         id TEXT PRIMARY KEY,
         child_id TEXT NOT NULL REFERENCES children(id) ON DELETE CASCADE,
@@ -76,8 +88,9 @@ export async function ensureDb() {
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
-    `,
-    sql`
+    `;
+
+    await sql`
       CREATE TABLE IF NOT EXISTS transactions (
         id TEXT PRIMARY KEY,
         child_id TEXT NOT NULL REFERENCES children(id) ON DELETE CASCADE,
@@ -86,27 +99,18 @@ export async function ensureDb() {
         description TEXT NOT NULL DEFAULT '',
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
-    `,
-    sql`
+    `;
+
+    await sql`
       CREATE TABLE IF NOT EXISTS reward_claims (
         id TEXT PRIMARY KEY,
         child_id TEXT NOT NULL REFERENCES children(id) ON DELETE CASCADE,
         reward_id TEXT NOT NULL REFERENCES rewards(id) ON DELETE CASCADE,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
-    `,
-    sql`
-      CREATE TABLE IF NOT EXISTS users (
-        id TEXT PRIMARY KEY,
-        username TEXT NOT NULL UNIQUE,
-        password_hash TEXT NOT NULL,
-        role TEXT NOT NULL DEFAULT 'child',
-        child_id TEXT REFERENCES children(id) ON DELETE CASCADE,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      )
-    `,
-    sql`
+    `;
+
+    await sql`
       CREATE TABLE IF NOT EXISTS chore_proposals (
         id TEXT PRIMARY KEY,
         child_id TEXT NOT NULL REFERENCES children(id) ON DELETE CASCADE,
@@ -118,8 +122,9 @@ export async function ensureDb() {
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
-    `,
-    sql`
+    `;
+
+    await sql`
       CREATE TABLE IF NOT EXISTS savings_goals (
         id TEXT PRIMARY KEY,
         child_id TEXT NOT NULL REFERENCES children(id) ON DELETE CASCADE,
@@ -128,27 +133,26 @@ export async function ensureDb() {
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
-    `,
-  ]);
+    `;
 
-  // Phase 3: sessions (FK → users) + V2 migrations — run in parallel
-  await Promise.all([
-    sql`
+    await sql`
       CREATE TABLE IF NOT EXISTS sessions (
         id TEXT PRIMARY KEY,
         user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
         expires_at TIMESTAMPTZ NOT NULL,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
-    `,
-    sql`ALTER TABLE chores ADD COLUMN IF NOT EXISTS day_of_week INTEGER`,
-    sql`ALTER TABLE chore_assignments ADD COLUMN IF NOT EXISTS end_date TEXT`,
-    sql`ALTER TABLE chore_assignments ADD COLUMN IF NOT EXISTS recurrence_source_id TEXT`,
-    sql`ALTER TABLE children ADD COLUMN IF NOT EXISTS allowance_amount NUMERIC NOT NULL DEFAULT 0`,
-    sql`ALTER TABLE children ADD COLUMN IF NOT EXISTS allowance_frequency TEXT NOT NULL DEFAULT 'none'`,
-    sql`ALTER TABLE children ADD COLUMN IF NOT EXISTS last_allowance_date TEXT`,
-    sql`ALTER TABLE children ADD COLUMN IF NOT EXISTS allowance_start_date TEXT`,
-    sql`
+    `;
+
+    await sql`ALTER TABLE chores ADD COLUMN IF NOT EXISTS day_of_week INTEGER`;
+    await sql`ALTER TABLE chore_assignments ADD COLUMN IF NOT EXISTS end_date TEXT`;
+    await sql`ALTER TABLE chore_assignments ADD COLUMN IF NOT EXISTS recurrence_source_id TEXT`;
+    await sql`ALTER TABLE children ADD COLUMN IF NOT EXISTS allowance_amount NUMERIC NOT NULL DEFAULT 0`;
+    await sql`ALTER TABLE children ADD COLUMN IF NOT EXISTS allowance_frequency TEXT NOT NULL DEFAULT 'none'`;
+    await sql`ALTER TABLE children ADD COLUMN IF NOT EXISTS last_allowance_date TEXT`;
+    await sql`ALTER TABLE children ADD COLUMN IF NOT EXISTS allowance_start_date TEXT`;
+
+    await sql`
       CREATE TABLE IF NOT EXISTS cash_out_requests (
         id TEXT PRIMARY KEY,
         child_id TEXT NOT NULL REFERENCES children(id) ON DELETE CASCADE,
@@ -157,14 +161,19 @@ export async function ensureDb() {
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         resolved_at TIMESTAMPTZ
       )
-    `,
-  ]);
+    `;
 
-  // Seed admin user
-  const existing = await sql`SELECT id FROM users WHERE role = 'admin' LIMIT 1`;
-  if (existing.length === 0) {
-    const id = randomUUID();
-    const hash = hashSync("admin", 10);
-    await sql`INSERT INTO users (id, username, password_hash, role) VALUES (${id}, ${'admin'}, ${hash}, 'admin')`;
-  }
+    const existing = await sql`SELECT id FROM users WHERE role = 'admin' LIMIT 1`;
+    if (existing.length === 0) {
+      const id = randomUUID();
+      const hash = hashSync("admin", 10);
+      await sql`INSERT INTO users (id, username, password_hash, role) VALUES (${id}, ${"admin"}, ${hash}, 'admin')`;
+    }
+
+    _initialized = true;
+  })().finally(() => {
+    _initializing = null;
+  });
+
+  return _initializing;
 }

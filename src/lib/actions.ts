@@ -4,6 +4,7 @@ import { sql, ensureDb, numify } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 import { randomUUID } from "crypto";
 import { hashSync } from "bcryptjs";
+import { getSession } from "@/lib/auth";
 import type {
   Child,
   Chore,
@@ -25,6 +26,34 @@ import type {
 
 function uid() {
   return randomUUID();
+}
+
+async function getActionUser(): Promise<User | null> {
+  const session = await getSession();
+  return session?.user ?? null;
+}
+
+async function isAdminAction(): Promise<boolean> {
+  const user = await getActionUser();
+  return !!user && user.role === "admin";
+}
+
+async function canMutateChild(childId: string): Promise<boolean> {
+  const user = await getActionUser();
+  if (!user) return false;
+  if (user.role === "admin") return true;
+  return user.child_id === childId;
+}
+
+async function isChildOwnerAction(childId: string): Promise<boolean> {
+  const user = await getActionUser();
+  return !!user && user.role === "child" && user.child_id === childId;
+}
+
+async function getSignedInChildId(): Promise<string | null> {
+  const user = await getActionUser();
+  if (!user || user.role !== "child" || !user.child_id) return null;
+  return user.child_id;
 }
 
 // ─── Children ───────────────────────────────────────────────
@@ -77,6 +106,7 @@ export async function getChild(id: string) {
 }
 
 export async function createChild(formData: FormData) {
+  if (!(await isAdminAction())) return;
   await ensureDb();
   const name = formData.get("name") as string;
   const avatar = (formData.get("avatar") as string) || "";
@@ -105,6 +135,7 @@ export async function createChild(formData: FormData) {
 }
 
 export async function deleteChild(id: string) {
+  if (!(await isAdminAction())) return;
   await ensureDb();
   await sql`DELETE FROM users WHERE child_id = ${id}`;
   await sql`DELETE FROM children WHERE id = ${id}`;
@@ -136,6 +167,7 @@ export async function getChores() {
 }
 
 export async function createChore(formData: FormData) {
+  if (!(await isAdminAction())) return;
   await ensureDb();
   const id = uid();
   const title = formData.get("title") as string;
@@ -150,6 +182,7 @@ export async function createChore(formData: FormData) {
 }
 
 export async function deleteChore(id: string) {
+  if (!(await isAdminAction())) return;
   await ensureDb();
   await sql`DELETE FROM chores WHERE id = ${id}`;
   revalidatePath("/");
@@ -159,6 +192,7 @@ export async function deleteChore(id: string) {
 // ─── Chore Assignments ─────────────────────────────────────
 
 export async function assignChore(formData: FormData) {
+  if (!(await isAdminAction())) return;
   await ensureDb();
   const childId = formData.get("childId") as string;
   const choreId = formData.get("choreId") as string;
@@ -210,35 +244,52 @@ export async function assignChore(formData: FormData) {
 
 export async function markChoreDone(assignmentId: string) {
   await ensureDb();
-  await sql`UPDATE chore_assignments SET status = 'completed', completed_at = NOW(), updated_at = NOW() WHERE id = ${assignmentId}`;
+  const rows = await sql`SELECT child_id FROM chore_assignments WHERE id = ${assignmentId} AND status = 'pending'`;
+  const assignment = rows[0] as { child_id: string } | undefined;
+  if (!assignment) return;
+  if (!(await canMutateChild(assignment.child_id))) return;
+
+  await sql`UPDATE chore_assignments SET status = 'completed', completed_at = NOW(), updated_at = NOW() WHERE id = ${assignmentId} AND status = 'pending'`;
   revalidatePath("/");
   revalidatePath("/chores");
+  revalidatePath("/my");
+  revalidatePath(`/children/${assignment.child_id}`);
 }
 
 export async function approveChore(assignmentId: string) {
+  if (!(await isAdminAction())) return;
   await ensureDb();
   const rows = await sql`
-    SELECT ca.*, c.value AS chore_value, c.title AS chore_title
+    SELECT ca.child_id, ca.status, c.value AS chore_value, c.title AS chore_title
     FROM chore_assignments ca JOIN chores c ON ca.chore_id = c.id
     WHERE ca.id = ${assignmentId}
   `;
-  const assignment = rows[0] ? numify(rows[0], "chore_value") as (ChoreAssignmentWithChore & { chore_value: number; chore_title: string }) : undefined;
-  if (!assignment) return;
+  const assignment = rows[0] ? numify(rows[0], "chore_value") as { child_id: string; status: string; chore_value: number; chore_title: string } : undefined;
+  if (!assignment || assignment.status !== "completed") return;
+
+  const updated = await sql`
+    UPDATE chore_assignments
+    SET status = 'approved', approved_at = NOW(), updated_at = NOW()
+    WHERE id = ${assignmentId} AND status = 'completed'
+    RETURNING id
+  `;
+  if (updated.length === 0) return;
 
   const txnId = uid();
-  await sql`UPDATE chore_assignments SET status = 'approved', approved_at = NOW(), updated_at = NOW() WHERE id = ${assignmentId}`;
   await sql`UPDATE children SET balance = balance + ${assignment.chore_value}, updated_at = NOW() WHERE id = ${assignment.child_id}`;
   const desc = `Completed: ${assignment.chore_title}`;
   await sql`INSERT INTO transactions (id, child_id, amount, "type", description) VALUES (${txnId}, ${assignment.child_id}, ${assignment.chore_value}, 'earn', ${desc})`;
 
   revalidatePath("/");
   revalidatePath("/chores");
+  revalidatePath("/approvals");
   revalidatePath(`/children/${assignment.child_id}`);
 }
 
 // ─── Transactions (manual bonus / deduction) ───────────────
 
 export async function addTransaction(formData: FormData) {
+  if (!(await isAdminAction())) return;
   await ensureDb();
   const id = uid();
   const childId = formData.get("childId") as string;
@@ -269,6 +320,7 @@ export async function getRewards() {
 }
 
 export async function createReward(formData: FormData) {
+  if (!(await isAdminAction())) return;
   await ensureDb();
   const id = uid();
   const title = formData.get("title") as string;
@@ -281,6 +333,7 @@ export async function createReward(formData: FormData) {
 }
 
 export async function deleteReward(id: string) {
+  if (!(await isAdminAction())) return;
   await ensureDb();
   await sql`DELETE FROM rewards WHERE id = ${id}`;
   revalidatePath("/");
@@ -288,58 +341,77 @@ export async function deleteReward(id: string) {
 }
 
 export async function claimReward(childId: string, rewardId: string) {
+  const user = await getActionUser();
+  if (!user) return;
+  const targetChildId = user.role === "admin" ? childId : user.child_id;
+  if (!targetChildId) return;
+  if (user.role === "child" && childId !== targetChildId) return;
   await ensureDb();
-  const [rewardRows, childRows] = await Promise.all([
-    sql`SELECT * FROM rewards WHERE id = ${rewardId}`,
-    sql`SELECT * FROM children WHERE id = ${childId}`,
-  ]);
+  const rewardRows = await sql`SELECT * FROM rewards WHERE id = ${rewardId}`;
   const reward = rewardRows[0] ? numify(rewardRows[0], "cost") as Reward : undefined;
-  const child = childRows[0] ? numify(childRows[0], "balance", "allowance_amount") as Child : undefined;
-  if (!reward || !child || child.balance < reward.cost) return;
+  if (!reward) return;
 
   const claimId = uid();
   const txnId = uid();
   const negCost = -reward.cost;
   const desc = `Claimed reward: ${reward.title}`;
-  await sql`INSERT INTO reward_claims (id, child_id, reward_id) VALUES (${claimId}, ${childId}, ${rewardId})`;
-  await sql`UPDATE children SET balance = balance - ${reward.cost}, updated_at = NOW() WHERE id = ${childId}`;
-  await sql`INSERT INTO transactions (id, child_id, amount, "type", description) VALUES (${txnId}, ${childId}, ${negCost}, 'spend', ${desc})`;
+
+  const debited = await sql`
+    UPDATE children
+    SET balance = balance - ${reward.cost}, updated_at = NOW()
+    WHERE id = ${targetChildId} AND balance >= ${reward.cost}
+    RETURNING id
+  `;
+  if (debited.length === 0) return;
+
+  await sql`INSERT INTO reward_claims (id, child_id, reward_id) VALUES (${claimId}, ${targetChildId}, ${rewardId})`;
+  await sql`INSERT INTO transactions (id, child_id, amount, "type", description) VALUES (${txnId}, ${targetChildId}, ${negCost}, 'spend', ${desc})`;
 
   revalidatePath("/");
-  revalidatePath(`/children/${childId}`);
+  revalidatePath(`/children/${targetChildId}`);
   revalidatePath("/rewards");
 }
 
 // ─── Cash-Out Requests ───────────────────────────────────────
 
 export async function requestCashOut(childId: string, amount: number) {
+  const targetChildId = await getSignedInChildId();
+  if (!targetChildId) return;
+  if (childId !== targetChildId) return;
   await ensureDb();
-  const rows = await sql`SELECT * FROM children WHERE id = ${childId}`;
-  const child = rows[0] ? numify(rows[0], "balance", "allowance_amount") as Child : undefined;
-  if (!child || amount <= 0 || child.balance < amount) return;
+  if (amount <= 0) return;
 
   const reqId = uid();
   const txnId = uid();
   const negAmount = -amount;
   const desc = `Cash-out request: £${amount.toFixed(2)}`;
 
-  await sql`INSERT INTO cash_out_requests (id, child_id, amount) VALUES (${reqId}, ${childId}, ${amount})`;
-  await sql`UPDATE children SET balance = balance - ${amount}, updated_at = NOW() WHERE id = ${childId}`;
-  await sql`INSERT INTO transactions (id, child_id, amount, "type", description) VALUES (${txnId}, ${childId}, ${negAmount}, 'cash_out', ${desc})`;
+  const debited = await sql`
+    UPDATE children
+    SET balance = balance - ${amount}, updated_at = NOW()
+    WHERE id = ${targetChildId} AND balance >= ${amount}
+    RETURNING id
+  `;
+  if (debited.length === 0) return;
+
+  await sql`INSERT INTO cash_out_requests (id, child_id, amount) VALUES (${reqId}, ${targetChildId}, ${amount})`;
+  await sql`INSERT INTO transactions (id, child_id, amount, "type", description) VALUES (${txnId}, ${targetChildId}, ${negAmount}, 'cash_out', ${desc})`;
 
   revalidatePath("/");
-  revalidatePath(`/children/${childId}`);
+  revalidatePath(`/children/${targetChildId}`);
   revalidatePath("/my");
   revalidatePath("/approvals");
 }
 
 export async function getChildCashOutRequests(childId: string): Promise<CashOutRequest[]> {
+  if (!(await canMutateChild(childId))) return [];
   await ensureDb();
   const rows = await sql`SELECT * FROM cash_out_requests WHERE child_id = ${childId} ORDER BY created_at DESC`;
   return rows.map(r => numify(r, "amount")) as CashOutRequest[];
 }
 
 export async function getPendingCashOuts(): Promise<CashOutRequestWithChild[]> {
+  if (!(await isAdminAction())) return [];
   await ensureDb();
   const rows = await sql`
     SELECT co.*, ch.name AS child_name, ch.avatar AS child_avatar
@@ -352,22 +424,28 @@ export async function getPendingCashOuts(): Promise<CashOutRequestWithChild[]> {
 }
 
 export async function approveCashOut(requestId: string) {
+  if (!(await isAdminAction())) return;
   await ensureDb();
-  await sql`UPDATE cash_out_requests SET status = 'approved', resolved_at = NOW() WHERE id = ${requestId}`;
+  await sql`UPDATE cash_out_requests SET status = 'approved', resolved_at = NOW() WHERE id = ${requestId} AND status = 'pending'`;
   revalidatePath("/approvals");
   revalidatePath("/my");
 }
 
 export async function rejectCashOut(requestId: string) {
+  if (!(await isAdminAction())) return;
   await ensureDb();
-  const rows = await sql`SELECT * FROM cash_out_requests WHERE id = ${requestId} AND status = 'pending'`;
-  const req = rows[0] ? numify(rows[0], "amount") as CashOutRequest : undefined;
+  const rows = await sql`
+    UPDATE cash_out_requests
+    SET status = 'rejected', resolved_at = NOW()
+    WHERE id = ${requestId} AND status = 'pending'
+    RETURNING child_id, amount
+  `;
+  const req = rows[0] ? numify(rows[0], "amount") as Pick<CashOutRequest, "child_id" | "amount"> : undefined;
   if (!req) return;
 
   const txnId = uid();
   const desc = `Cash-out rejected: £${req.amount.toFixed(2)} refunded`;
 
-  await sql`UPDATE cash_out_requests SET status = 'rejected', resolved_at = NOW() WHERE id = ${requestId}`;
   await sql`UPDATE children SET balance = balance + ${req.amount}, updated_at = NOW() WHERE id = ${req.child_id}`;
   await sql`INSERT INTO transactions (id, child_id, amount, "type", description) VALUES (${txnId}, ${req.child_id}, ${req.amount}, 'refund', ${desc})`;
 
@@ -380,6 +458,7 @@ export async function rejectCashOut(requestId: string) {
 // ─── Admin ──────────────────────────────────────────────────
 
 export async function adminResetAllBalances() {
+  if (!(await isAdminAction())) return;
   await ensureDb();
   await sql`UPDATE children SET balance = 0, updated_at = NOW()`;
   await sql`DELETE FROM transactions`;
@@ -389,6 +468,7 @@ export async function adminResetAllBalances() {
 }
 
 export async function adminSetBalance(formData: FormData) {
+  if (!(await isAdminAction())) return;
   await ensureDb();
   const childId = formData.get("childId") as string;
   const newBalance = parseFloat(formData.get("balance") as string);
@@ -409,6 +489,7 @@ export async function adminSetBalance(formData: FormData) {
 }
 
 export async function adminUpdateChore(formData: FormData) {
+  if (!(await isAdminAction())) return;
   await ensureDb();
   const choreId = formData.get("choreId") as string;
   const title = formData.get("title") as string;
@@ -424,6 +505,7 @@ export async function adminUpdateChore(formData: FormData) {
 }
 
 export async function adminUpdateReward(formData: FormData) {
+  if (!(await isAdminAction())) return;
   await ensureDb();
   const rewardId = formData.get("rewardId") as string;
   const title = formData.get("title") as string;
@@ -439,6 +521,7 @@ export async function adminUpdateReward(formData: FormData) {
 }
 
 export async function adminOverrideAssignment(formData: FormData) {
+  if (!(await isAdminAction())) return;
   await ensureDb();
   const assignmentId = formData.get("assignmentId") as string;
   const newStatus = formData.get("status") as string;
@@ -457,6 +540,7 @@ export async function adminOverrideAssignment(formData: FormData) {
 }
 
 export async function adminDeleteAssignment(assignmentId: string) {
+  if (!(await isAdminAction())) return;
   await ensureDb();
   await sql`DELETE FROM chore_assignments WHERE id = ${assignmentId}`;
   revalidatePath("/");
@@ -465,6 +549,7 @@ export async function adminDeleteAssignment(assignmentId: string) {
 }
 
 export async function adminDeleteTransaction(transactionId: string) {
+  if (!(await isAdminAction())) return;
   await ensureDb();
   const rows = await sql`SELECT * FROM transactions WHERE id = ${transactionId}`;
   const txn = rows[0] ? numify(rows[0], "amount") as Transaction : undefined;
@@ -478,6 +563,7 @@ export async function adminDeleteTransaction(transactionId: string) {
 }
 
 export async function adminDeleteAllAssignments() {
+  if (!(await isAdminAction())) return;
   await ensureDb();
   await sql`DELETE FROM chore_assignments`;
   revalidatePath("/");
@@ -486,6 +572,9 @@ export async function adminDeleteAllAssignments() {
 }
 
 export async function adminGetAllData() {
+  if (!(await isAdminAction())) {
+    return { children: [], chores: [], assignments: [], transactions: [], rewards: [], rewardClaims: [] };
+  }
   await ensureDb();
   const [rawChildren, rawChores, rawAssignments, rawTransactions, rawRewards, rawClaims] = await Promise.all([
     sql`SELECT * FROM children ORDER BY name ASC`,
@@ -522,6 +611,7 @@ export async function adminGetAllData() {
 }
 
 export async function adminNukeDatabase() {
+  if (!(await isAdminAction())) return;
   await ensureDb();
   await sql`DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE role != 'admin')`;
   await sql`DELETE FROM users WHERE role != 'admin'`;
@@ -541,6 +631,7 @@ export async function adminNukeDatabase() {
 // ─── Recurring Allowance ─────────────────────────────────────
 
 export async function updateAllowance(childId: string, amount: number, frequency: string, startDate: string) {
+  if (!(await isAdminAction())) return;
   await ensureDb();
   if (frequency === "none") {
     await sql`
@@ -549,24 +640,12 @@ export async function updateAllowance(childId: string, amount: number, frequency
       WHERE id = ${childId}
     `;
   } else {
-    // Set last_allowance_date to one period before startDate so the first
-    // deposit triggers ON the start date when processAllowances runs.
-    const start = new Date(startDate);
-    if (frequency === "weekly") {
-      start.setDate(start.getDate() - 7);
-    } else {
-      start.setMonth(start.getMonth() - 1);
-    }
-    const seedDate = start.toISOString().split("T")[0];
     await sql`
       UPDATE children
-      SET allowance_amount = ${amount}, allowance_frequency = ${frequency}, allowance_start_date = ${startDate}, last_allowance_date = ${seedDate}, updated_at = NOW()
+      SET allowance_amount = ${amount}, allowance_frequency = ${frequency}, allowance_start_date = ${startDate}, last_allowance_date = ${startDate}, updated_at = NOW()
       WHERE id = ${childId}
     `;
   }
-  // Process immediately so the first deposit appears right away
-  await processAllowances();
-
   revalidatePath("/");
   revalidatePath(`/children/${childId}`);
   revalidatePath("/children");
@@ -656,7 +735,10 @@ export async function getChildSavingsGoals(childId: string) {
 export async function createSavingsGoal(formData: FormData) {
   await ensureDb();
   const id = uid();
-  const childId = formData.get("childId") as string;
+  const childId = await getSignedInChildId();
+  if (!childId) return;
+  const requestedChildId = formData.get("childId") as string | null;
+  if (requestedChildId && requestedChildId !== childId) return;
   const title = formData.get("title") as string;
   const targetAmount = parseFloat(formData.get("targetAmount") as string) || 0;
   await sql`INSERT INTO savings_goals (id, child_id, title, target_amount) VALUES (${id}, ${childId}, ${title}, ${targetAmount})`;
@@ -667,11 +749,12 @@ export async function createSavingsGoal(formData: FormData) {
 export async function deleteSavingsGoal(goalId: string) {
   await ensureDb();
   const rows = await sql`SELECT child_id FROM savings_goals WHERE id = ${goalId}`;
+  const goal = rows[0] as { child_id: string } | undefined;
+  if (!goal) return;
+  if (!(await canMutateChild(goal.child_id))) return;
   await sql`DELETE FROM savings_goals WHERE id = ${goalId}`;
-  if (rows[0]) {
-    revalidatePath("/my");
-    revalidatePath(`/children/${rows[0].child_id}`);
-  }
+  revalidatePath("/my");
+  revalidatePath(`/children/${goal.child_id}`);
 }
 
 // ─── Streak Tracker ────────────────────────────────────────
@@ -814,7 +897,10 @@ export async function getChildProposals(childId: string) {
 export async function createProposal(formData: FormData) {
   await ensureDb();
   const id = uid();
-  const childId = formData.get("childId") as string;
+  const childId = await getSignedInChildId();
+  if (!childId) return;
+  const requestedChildId = formData.get("childId") as string | null;
+  if (requestedChildId && requestedChildId !== childId) return;
   const title = formData.get("title") as string;
   const description = (formData.get("description") as string) || "";
   const requestedValue = parseFloat(formData.get("requestedValue") as string) || 0;
@@ -828,6 +914,7 @@ export async function childAcceptCounter(proposalId: string) {
   await ensureDb();
   const rows = await sql`SELECT * FROM chore_proposals WHERE id = ${proposalId}`;
   const proposal = rows[0] ? numify(rows[0], "requested_value", "admin_value") as ChoreProposal : null;
+  if (!proposal || !(await isChildOwnerAction(proposal.child_id))) return;
   if (!proposal || proposal.status !== "countered" || proposal.admin_value === null) return;
 
   // Accept: create a one-off chore + assignment at the agreed (admin) value
@@ -845,6 +932,9 @@ export async function childAcceptCounter(proposalId: string) {
 
 export async function childDeclineCounter(proposalId: string) {
   await ensureDb();
+  const rows = await sql`SELECT child_id FROM chore_proposals WHERE id = ${proposalId}`;
+  const proposal = rows[0] as { child_id: string } | undefined;
+  if (!proposal || !(await isChildOwnerAction(proposal.child_id))) return;
   await sql`UPDATE chore_proposals SET status = 'declined', updated_at = NOW() WHERE id = ${proposalId}`;
   revalidatePath("/");
   revalidatePath("/my");
@@ -852,6 +942,7 @@ export async function childDeclineCounter(proposalId: string) {
 }
 
 export async function adminApproveProposal(proposalId: string) {
+  if (!(await isAdminAction())) return;
   await ensureDb();
   const rows = await sql`SELECT * FROM chore_proposals WHERE id = ${proposalId}`;
   const proposal = rows[0] ? numify(rows[0], "requested_value", "admin_value") as ChoreProposal : null;
@@ -871,6 +962,7 @@ export async function adminApproveProposal(proposalId: string) {
 }
 
 export async function adminCounterProposal(formData: FormData) {
+  if (!(await isAdminAction())) return;
   await ensureDb();
   const proposalId = formData.get("proposalId") as string;
   const adminValue = parseFloat(formData.get("adminValue") as string);
@@ -882,6 +974,7 @@ export async function adminCounterProposal(formData: FormData) {
 }
 
 export async function adminRejectProposal(proposalId: string) {
+  if (!(await isAdminAction())) return;
   await ensureDb();
   await sql`UPDATE chore_proposals SET status = 'rejected', updated_at = NOW() WHERE id = ${proposalId}`;
   revalidatePath("/");
@@ -890,6 +983,7 @@ export async function adminRejectProposal(proposalId: string) {
 }
 
 export async function getPendingApprovals() {
+  if (!(await isAdminAction())) return { choreApprovals: [], proposals: [] };
   await ensureDb();
   const [rawApprovals, rawProposals] = await Promise.all([
     sql`
