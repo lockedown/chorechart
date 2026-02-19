@@ -47,10 +47,10 @@ export default async function DashboardPage() {
                 <ListChecks className="h-4 w-4 text-amber-500" />
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">{stats.pendingApprovals + stats.pendingProposals}</div>
-                {stats.pendingProposals > 0 && (
+                <div className="text-2xl font-bold">{stats.pendingApprovals + stats.pendingProposals + stats.pendingCashOuts}</div>
+                {(stats.pendingProposals > 0 || stats.pendingCashOuts > 0) && (
                   <p className="text-xs text-muted-foreground mt-1">
-                    {stats.pendingApprovals} chores · {stats.pendingProposals} proposals
+                    {stats.pendingApprovals} chores{stats.pendingProposals > 0 ? ` · ${stats.pendingProposals} proposals` : ""}{stats.pendingCashOuts > 0 ? ` · ${stats.pendingCashOuts} cash-outs` : ""}
                   </p>
                 )}
               </CardContent>
