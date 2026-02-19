@@ -549,15 +549,28 @@ export async function updateAllowance(childId: string, amount: number, frequency
       WHERE id = ${childId}
     `;
   } else {
+    // Set last_allowance_date to one period before startDate so the first
+    // deposit triggers ON the start date when processAllowances runs.
+    const start = new Date(startDate);
+    if (frequency === "weekly") {
+      start.setDate(start.getDate() - 7);
+    } else {
+      start.setMonth(start.getMonth() - 1);
+    }
+    const seedDate = start.toISOString().split("T")[0];
     await sql`
       UPDATE children
-      SET allowance_amount = ${amount}, allowance_frequency = ${frequency}, allowance_start_date = ${startDate}, last_allowance_date = ${startDate}, updated_at = NOW()
+      SET allowance_amount = ${amount}, allowance_frequency = ${frequency}, allowance_start_date = ${startDate}, last_allowance_date = ${seedDate}, updated_at = NOW()
       WHERE id = ${childId}
     `;
   }
+  // Process immediately so the first deposit appears right away
+  await processAllowances();
+
   revalidatePath("/");
   revalidatePath(`/children/${childId}`);
   revalidatePath("/children");
+  revalidatePath("/my");
 }
 
 export async function processAllowances() {

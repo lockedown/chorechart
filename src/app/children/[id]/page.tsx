@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getChild, getChores, getRewards, addTransaction, claimReward, markChoreDone, approveChore, getChildAchievements, getAllAchievements } from "@/lib/actions";
+import { getChild, getChores, getRewards, addTransaction, claimReward, markChoreDone, approveChore, getChildAchievements, getAllAchievements, processAllowances } from "@/lib/actions";
 import { requireAdmin } from "@/lib/auth";
 import { Nav } from "@/components/nav";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,6 +17,7 @@ import { AllowanceForm } from "@/components/allowance-form";
 export default async function ChildDetailPage({ params }: { params: Promise<{ id: string }> }) {
   await requireAdmin();
   const { id } = await params;
+  await processAllowances();
   const [child, chores, rewards, achievements] = await Promise.all([
     getChild(id),
     getChores(),
@@ -176,7 +177,7 @@ export default async function ChildDetailPage({ params }: { params: Promise<{ id
               <CardHeader><CardTitle className="text-base flex items-center gap-2"><CalendarClock className="h-4 w-4 text-violet-500" /> Recurring Allowance</CardTitle></CardHeader>
               <CardContent>
                 <p className="text-sm text-muted-foreground mb-3">Set an automatic weekly or monthly allowance for this child.</p>
-                <AllowanceForm childId={child.id} currentAmount={child.allowance_amount} currentFrequency={child.allowance_frequency} currentStartDate={child.allowance_start_date} />
+                <AllowanceForm key={`${child.allowance_frequency}-${child.allowance_amount}-${child.allowance_start_date}`} childId={child.id} currentAmount={child.allowance_amount} currentFrequency={child.allowance_frequency} currentStartDate={child.allowance_start_date} />
               </CardContent>
             </Card>
 
