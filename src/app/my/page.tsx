@@ -1,6 +1,6 @@
 import { getSession } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { getChild, getRewards, markChoreDone, claimReward, getChildProposals, childAcceptCounter, childDeclineCounter, getChildStreak, getChildSavingsGoals, deleteSavingsGoal, getChildAchievements, getAllAchievements, processAllowances, getChildCashOutRequests } from "@/lib/actions";
+import { getChild, getRewards, markChoreDone, claimReward, getChildProposals, childAcceptCounter, childDeclineCounter, getChildStreak, getChildSavingsGoals, deleteSavingsGoal, getChildAchievements, getAllAchievements, getChildCashOutRequests } from "@/lib/actions";
 import { Nav } from "@/components/nav";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -18,8 +18,6 @@ export default async function MyPage() {
   if (!session) redirect("/login");
   if (session.user.role === "admin") redirect("/");
   if (!session.user.child_id) redirect("/login");
-
-  await processAllowances();
 
   const [child, rewards, proposals, streak, savingsGoals, achievements, cashOutRequests] = await Promise.all([
     getChild(session.user.child_id),

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getChild, getChores, getRewards, addTransaction, claimReward, markChoreDone, approveChore, getChildAchievements, getAllAchievements, processAllowances } from "@/lib/actions";
+import { getChild, getChores, getRewards, addTransaction, claimReward, markChoreDone, approveChore, getChildAchievements, getAllAchievements } from "@/lib/actions";
 import { requireAdmin } from "@/lib/auth";
 import { Nav } from "@/components/nav";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,7 +17,6 @@ import { AllowanceForm } from "@/components/allowance-form";
 export default async function ChildDetailPage({ params }: { params: Promise<{ id: string }> }) {
   await requireAdmin();
   const { id } = await params;
-  await processAllowances();
   const [child, chores, rewards, achievements] = await Promise.all([
     getChild(id),
     getChores(),

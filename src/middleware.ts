@@ -1,6 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const PUBLIC_PATHS = ["/login"];
+const PUBLIC_PREFIX_PATHS = ["/login"];
+const PUBLIC_EXACT_PATHS = new Set(["/api/cron/allowances", "/api/ops/migrate"]);
+const PUBLIC_FILES = new Set([
+  "/manifest.json",
+  "/site.webmanifest",
+  "/apple-touch-icon.png",
+  "/apple-touch-icon-precomposed.png",
+  "/icon-192.png",
+  "/icon-192.svg",
+  "/icon-512.png",
+  "/icon-512.svg",
+  "/robots.txt",
+  "/sitemap.xml",
+]);
+
+function isPublicPath(pathname: string) {
+  return (
+    PUBLIC_PREFIX_PATHS.some((p) => pathname.startsWith(p)) ||
+    PUBLIC_EXACT_PATHS.has(pathname) ||
+    PUBLIC_FILES.has(pathname)
+  );
+}
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -8,7 +29,8 @@ export function middleware(request: NextRequest) {
   // Allow static assets
   if (
     pathname.startsWith("/_next") ||
-    pathname.startsWith("/favicon")
+    pathname.startsWith("/favicon") ||
+    PUBLIC_FILES.has(pathname)
   ) {
     return NextResponse.next();
   }
@@ -25,7 +47,7 @@ export function middleware(request: NextRequest) {
       requestHeaders.set("origin", `${proto}://${forwardedHost}`);
 
       // Allow public paths after fixing headers
-      if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) {
+      if (isPublicPath(pathname)) {
         return NextResponse.next({ request: { headers: requestHeaders } });
       }
 
@@ -40,7 +62,7 @@ export function middleware(request: NextRequest) {
   }
 
   // Allow public paths
-  if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) {
+  if (isPublicPath(pathname)) {
     return NextResponse.next();
   }
 
@@ -54,5 +76,5 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|manifest.json|site.webmanifest|apple-touch-icon.png|apple-touch-icon-precomposed.png|icon-192.png|icon-192.svg|icon-512.png|icon-512.svg|robots.txt|sitemap.xml).*)"],
 };

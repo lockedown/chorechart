@@ -16,6 +16,33 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
+## Operational endpoints
+
+Set a `CRON_SECRET` environment variable in your deployment and local `.env`.
+
+### Initialize / migrate database schema (one-off)
+
+Run this before sending normal traffic to a fresh environment:
+
+```bash
+curl -X POST http://localhost:3000/api/ops/migrate \
+  -H "Authorization: Bearer $CRON_SECRET"
+```
+
+### Allowance + session maintenance job
+
+The app exposes a cron-safe endpoint that:
+- processes recurring allowances
+- removes expired sessions
+- removes stale child sessions linked to deleted/missing child records
+
+```bash
+curl http://localhost:3000/api/cron/allowances \
+  -H "Authorization: Bearer $CRON_SECRET"
+```
+
+`vercel.json` schedules this endpoint daily at `06:00` UTC.
+
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.

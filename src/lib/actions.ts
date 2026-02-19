@@ -718,13 +718,28 @@ export async function processAllowances() {
   await ensureDb();
   const rows = await sql`SELECT * FROM children WHERE allowance_frequency != 'none' AND allowance_amount > 0`;
   const children = rows.map(r => numify(r, "balance", "allowance_amount")) as Child[];
-  if (children.length === 0) return;
+  if (children.length === 0) {
+    return {
+      checkedChildren: 0,
+      depositedChildren: 0,
+      totalDeposited: 0,
+      baselineSeeded: 0,
+      transactionsCreated: 0,
+    };
+  }
+
+  let checkedChildren = 0;
+  let depositedChildren = 0;
+  let totalDeposited = 0;
+  let baselineSeeded = 0;
+  let transactionsCreated = 0;
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const todayStr = today.toISOString().split("T")[0];
 
   for (const child of children) {
+    checkedChildren++;
     // Skip if start date is in the future
     if (child.allowance_start_date && child.allowance_start_date > todayStr) continue;
 
@@ -746,11 +761,13 @@ export async function processAllowances() {
 
     if (depositCount <= 0) {
       if (!child.last_allowance_date) {
-        await sql`
+        const seeded = await sql`
           UPDATE children
           SET last_allowance_date = ${lastDate}, updated_at = NOW()
           WHERE id = ${child.id} AND last_allowance_date IS NULL
+          RETURNING id
         `;
+        if (seeded.length > 0) baselineSeeded++;
       }
       continue;
     }
@@ -762,7 +779,7 @@ export async function processAllowances() {
       ? `Allowance (${label}ly)`
       : `Allowance: ${depositCount} ${label}s`;
 
-    await sql`
+    const applied = await sql`
       WITH updated AS (
         UPDATE children
         SET balance = balance + ${totalDeposit}, last_allowance_date = ${todayStr}, updated_at = NOW()
@@ -771,19 +788,35 @@ export async function processAllowances() {
           AND allowance_amount = ${child.allowance_amount}
           AND allowance_frequency = ${child.allowance_frequency}
         RETURNING id
+      ),
+      logged AS (
+        INSERT INTO transactions (id, child_id, amount, "type", description)
+        SELECT ${txnId}, ${child.id}, ${totalDeposit}, 'allowance', ${desc}
+        FROM updated
+        RETURNING id
       )
-      INSERT INTO transactions (id, child_id, amount, "type", description)
-      SELECT ${txnId}, ${child.id}, ${totalDeposit}, 'allowance', ${desc}
-      FROM updated
+      SELECT
+        (SELECT COUNT(*)::int FROM updated) AS updated_count,
+        (SELECT COUNT(*)::int FROM logged) AS logged_count
     `;
+
+    const stats = applied[0] as { updated_count: number; logged_count: number } | undefined;
+    const updatedCount = Number(stats?.updated_count ?? 0);
+    const loggedCount = Number(stats?.logged_count ?? 0);
+    if (updatedCount > 0) {
+      depositedChildren += updatedCount;
+      totalDeposited += totalDeposit;
+      transactionsCreated += loggedCount;
+    }
   }
+
+  return { checkedChildren, depositedChildren, totalDeposited, baselineSeeded, transactionsCreated };
 }
 
 // ─── Dashboard stats ────────────────────────────────────────
 
 export async function getDashboardStats() {
   await ensureDb();
-  await processAllowances();
   const [rawChildren, pendingRow, choreRow, rewardRow, proposalRow, cashOutRow] = await Promise.all([
     sql`SELECT * FROM children ORDER BY name ASC`,
     sql`SELECT COUNT(*) AS cnt FROM chore_assignments WHERE status = 'completed'`,
