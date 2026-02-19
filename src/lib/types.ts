@@ -3,6 +3,9 @@ export interface Child {
   name: string;
   avatar: string;
   balance: number;
+  allowance_amount: number;
+  allowance_frequency: string;
+  last_allowance_date: string | null;
   created_at: string;
   updated_at: string;
 }

@@ -144,6 +144,9 @@ export async function ensureDb() {
     sql`ALTER TABLE chores ADD COLUMN IF NOT EXISTS day_of_week INTEGER`,
     sql`ALTER TABLE chore_assignments ADD COLUMN IF NOT EXISTS end_date TEXT`,
     sql`ALTER TABLE chore_assignments ADD COLUMN IF NOT EXISTS recurrence_source_id TEXT`,
+    sql`ALTER TABLE children ADD COLUMN IF NOT EXISTS allowance_amount NUMERIC NOT NULL DEFAULT 0`,
+    sql`ALTER TABLE children ADD COLUMN IF NOT EXISTS allowance_frequency TEXT NOT NULL DEFAULT 'none'`,
+    sql`ALTER TABLE children ADD COLUMN IF NOT EXISTS last_allowance_date TEXT`,
   ]);
 
   // Seed admin user

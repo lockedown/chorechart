@@ -65,6 +65,9 @@ export default async function ChildrenPage() {
                         </p>
                         <p className="text-xs text-muted-foreground mt-1">
                           {child.assignedChores.filter((a) => a.status === "pending").length} pending chores
+                          {child.allowance_frequency !== "none" && child.allowance_amount > 0 && (
+                            <span className="ml-1">· £{child.allowance_amount.toFixed(2)}/{child.allowance_frequency === "weekly" ? "wk" : "mo"}</span>
+                          )}
                         </p>
                       </div>
                     </Link>

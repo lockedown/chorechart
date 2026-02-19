@@ -10,8 +10,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { CheckCircle, Clock, Award, ArrowLeft, Plus, Minus, Gift, Medal } from "lucide-react";
+import { CheckCircle, Clock, Award, ArrowLeft, Plus, Minus, Gift, Medal, CalendarClock } from "lucide-react";
 import { AssignChoreForm } from "@/components/assign-chore-form";
+import { AllowanceForm } from "@/components/allowance-form";
 
 export default async function ChildDetailPage({ params }: { params: Promise<{ id: string }> }) {
   await requireAdmin();
@@ -47,6 +48,9 @@ export default async function ChildDetailPage({ params }: { params: Promise<{ id
             <h2 className="text-3xl font-bold tracking-tight">{child.name}</h2>
             <p className="text-muted-foreground">
               Balance: <span className="text-lg font-semibold text-green-600">£{child.balance.toFixed(2)}</span>
+              {child.allowance_frequency !== "none" && child.allowance_amount > 0 && (
+                <span className="ml-2 text-sm text-violet-600">· £{child.allowance_amount.toFixed(2)}/{child.allowance_frequency === "weekly" ? "week" : "month"}</span>
+              )}
             </p>
           </div>
         </div>
@@ -168,6 +172,14 @@ export default async function ChildDetailPage({ params }: { params: Promise<{ id
 
           {/* ─── Pocket Money Tab ─── */}
           <TabsContent value="money" className="space-y-6">
+            <Card>
+              <CardHeader><CardTitle className="text-base flex items-center gap-2"><CalendarClock className="h-4 w-4 text-violet-500" /> Recurring Allowance</CardTitle></CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground mb-3">Set an automatic weekly or monthly allowance for this child.</p>
+                <AllowanceForm childId={child.id} currentAmount={child.allowance_amount} currentFrequency={child.allowance_frequency} />
+              </CardContent>
+            </Card>
+
             <Card>
               <CardHeader><CardTitle className="text-base">Add Bonus / Deduction</CardTitle></CardHeader>
               <CardContent>

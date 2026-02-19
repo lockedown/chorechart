@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="96" fill="#7c3aed"/>
+  <text x="256" y="288" text-anchor="middle" dominant-baseline="central" font-family="system-ui, -apple-system, sans-serif" font-weight="700" font-size="210" fill="white">CC</text>
+  <circle cx="400" cy="120" r="52" fill="#fbbf24"/>
+  <text x="400" y="120" text-anchor="middle" dominant-baseline="central" font-family="system-ui, sans-serif" font-weight="700" font-size="52" fill="#7c3aed">&#x2713;</text>
+</svg>

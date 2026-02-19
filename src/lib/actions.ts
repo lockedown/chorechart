@@ -37,7 +37,7 @@ export async function getChildren() {
       ORDER BY ca.created_at DESC
     `,
   ]);
-  const children = rawChildren.map(r => numify(r, "balance")) as Child[];
+  const children = rawChildren.map(r => numify(r, "balance", "allowance_amount")) as Child[];
   const allChores = rawAllChores.map(r => numify(r, "chore_value")) as ChoreAssignmentWithChore[];
   const choresByChild = new Map<string, ChoreAssignmentWithChore[]>();
   for (const chore of allChores) {
@@ -51,7 +51,7 @@ export async function getChildren() {
 export async function getChild(id: string) {
   await ensureDb();
   const rows = await sql`SELECT * FROM children WHERE id = ${id}`;
-  const child = rows[0] ? numify(rows[0], "balance") as Child : null;
+  const child = rows[0] ? numify(rows[0], "balance", "allowance_amount") as Child : null;
   if (!child) return null;
 
   const [rawAssigned, rawTxns, rawClaims] = await Promise.all([
@@ -292,7 +292,7 @@ export async function claimReward(childId: string, rewardId: string) {
     sql`SELECT * FROM children WHERE id = ${childId}`,
   ]);
   const reward = rewardRows[0] ? numify(rewardRows[0], "cost") as Reward : undefined;
-  const child = childRows[0] ? numify(childRows[0], "balance") as Child : undefined;
+  const child = childRows[0] ? numify(childRows[0], "balance", "allowance_amount") as Child : undefined;
   if (!reward || !child || child.balance < reward.cost) return;
 
   const claimId = uid();
@@ -326,7 +326,7 @@ export async function adminSetBalance(formData: FormData) {
   if (isNaN(newBalance)) return;
 
   const childRows = await sql`SELECT * FROM children WHERE id = ${childId}`;
-  const child = childRows[0] ? numify(childRows[0], "balance") as Child : undefined;
+  const child = childRows[0] ? numify(childRows[0], "balance", "allowance_amount") as Child : undefined;
   if (!child) return;
 
   const diff = newBalance - child.balance;
@@ -442,7 +442,7 @@ export async function adminGetAllData() {
       ORDER BY rc.created_at DESC
     `,
   ]);
-  const children = rawChildren.map(r => numify(r, "balance")) as Child[];
+  const children = rawChildren.map(r => numify(r, "balance", "allowance_amount")) as Child[];
   const chores = rawChores.map(r => numify(r, "value")) as Chore[];
   const assignments = rawAssignments.map(r => numify(r, "chore_value")) as (ChoreAssignmentWithChore & { child_name: string })[];
   const transactions = rawTransactions.map(r => numify(r, "amount")) as (Transaction & { child_name: string })[];
@@ -469,10 +469,70 @@ export async function adminNukeDatabase() {
   revalidatePath("/admin");
 }
 
+// ─── Recurring Allowance ─────────────────────────────────────
+
+export async function updateAllowance(childId: string, amount: number, frequency: string) {
+  await ensureDb();
+  await sql`
+    UPDATE children
+    SET allowance_amount = ${amount}, allowance_frequency = ${frequency}, updated_at = NOW()
+    WHERE id = ${childId}
+  `;
+  revalidatePath("/");
+  revalidatePath(`/children/${childId}`);
+  revalidatePath("/children");
+}
+
+export async function processAllowances() {
+  await ensureDb();
+  const rows = await sql`SELECT * FROM children WHERE allowance_frequency != 'none' AND allowance_amount > 0`;
+  const children = rows.map(r => numify(r, "balance", "allowance_amount")) as Child[];
+  if (children.length === 0) return;
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const todayStr = today.toISOString().split("T")[0];
+
+  for (const child of children) {
+    const lastDate = child.last_allowance_date;
+    let depositCount = 0;
+
+    if (!lastDate) {
+      depositCount = 1;
+    } else {
+      const last = new Date(lastDate);
+      last.setHours(0, 0, 0, 0);
+      const diffMs = today.getTime() - last.getTime();
+      const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+      if (child.allowance_frequency === "weekly") {
+        depositCount = Math.floor(diffDays / 7);
+      } else if (child.allowance_frequency === "monthly") {
+        let months = (today.getFullYear() - last.getFullYear()) * 12 + (today.getMonth() - last.getMonth());
+        if (today.getDate() < last.getDate()) months--;
+        depositCount = Math.max(0, months);
+      }
+    }
+
+    if (depositCount <= 0) continue;
+
+    const totalDeposit = child.allowance_amount * depositCount;
+    const txnId = uid();
+    const label = child.allowance_frequency === "weekly" ? "week" : "month";
+    const desc = depositCount === 1
+      ? `Allowance (${label}ly)`
+      : `Allowance: ${depositCount} ${label}s`;
+
+    await sql`UPDATE children SET balance = balance + ${totalDeposit}, last_allowance_date = ${todayStr}, updated_at = NOW() WHERE id = ${child.id}`;
+    await sql`INSERT INTO transactions (id, child_id, amount, "type", description) VALUES (${txnId}, ${child.id}, ${totalDeposit}, 'allowance', ${desc})`;
+  }
+}
+
 // ─── Dashboard stats ────────────────────────────────────────
 
 export async function getDashboardStats() {
   await ensureDb();
+  await processAllowances();
   const [rawChildren, pendingRow, choreRow, rewardRow, proposalRow] = await Promise.all([
     sql`SELECT * FROM children ORDER BY name ASC`,
     sql`SELECT COUNT(*) AS cnt FROM chore_assignments WHERE status = 'completed'`,
@@ -480,7 +540,7 @@ export async function getDashboardStats() {
     sql`SELECT COUNT(*) AS cnt FROM rewards`,
     sql`SELECT COUNT(*) AS cnt FROM chore_proposals WHERE status IN ('pending', 'countered')`,
   ]);
-  const children = rawChildren.map(r => numify(r, "balance")) as Child[];
+  const children = rawChildren.map(r => numify(r, "balance", "allowance_amount")) as Child[];
   const pendingApprovals = Number(pendingRow[0].cnt);
   const totalChores = Number(choreRow[0].cnt);
   const rewardCount = Number(rewardRow[0].cnt);
