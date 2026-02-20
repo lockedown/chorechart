@@ -7,6 +7,7 @@ import { compareSync, hashSync } from "bcryptjs";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import type { User, Session } from "@/lib/types";
+import { changePasswordSchema, adminResetPasswordSchema, parseFormData } from "@/lib/schemas";
 
 const SESSION_COOKIE = "chorechart_session";
 const SESSION_DURATION_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
@@ -113,13 +114,9 @@ export async function changePassword(formData: FormData) {
   const session = await getSession();
   if (!session) return { error: "Not authenticated." };
 
-  const currentPassword = formData.get("currentPassword") as string;
-  const newPassword = formData.get("newPassword") as string;
-  const confirmPassword = formData.get("confirmPassword") as string;
-
-  if (!currentPassword || !newPassword) return { error: "All fields are required." };
-  if (newPassword.length < 4) return { error: "New password must be at least 4 characters." };
-  if (newPassword !== confirmPassword) return { error: "Passwords do not match." };
+  const parsed = parseFormData(changePasswordSchema, formData);
+  if (!parsed) return { error: "Invalid input." };
+  const { currentPassword, newPassword } = parsed;
   if (!compareSync(currentPassword, session.user.password_hash)) {
     return { error: "Current password is incorrect." };
   }
@@ -134,9 +131,9 @@ export async function changePassword(formData: FormData) {
 
 export async function adminResetUserPassword(formData: FormData) {
   await requireAdmin();
-  const userId = formData.get("userId") as string;
-  const newPassword = formData.get("newPassword") as string;
-  if (!userId || !newPassword || newPassword.length < 4) return { error: "Invalid input." };
+  const parsed = parseFormData(adminResetPasswordSchema, formData);
+  if (!parsed) return { error: "Invalid input." };
+  const { userId, newPassword } = parsed;
 
   const hash = hashSync(newPassword, 10);
   await sql`UPDATE users SET password_hash = ${hash}, updated_at = NOW() WHERE id = ${userId}`;
