@@ -1,6 +1,5 @@
-"use server";
-
 // Barrel re-export — all consumers continue importing from "@/lib/actions"
+// Note: "use server" is NOT placed here; each module has its own directive.
 
 export { getChildren, getChild, createChild, deleteChild } from "./children";
 export { getChores, createChore, deleteChore, assignChore, markChoreDone, approveChore } from "./chores";

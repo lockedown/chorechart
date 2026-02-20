@@ -1,5 +1,3 @@
-"use server";
-
 import { randomUUID } from "crypto";
 import { getSession } from "@/lib/auth";
 import type { User } from "@/lib/types";
